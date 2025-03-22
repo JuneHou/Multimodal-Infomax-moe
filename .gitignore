@@ -143,4 +143,5 @@ src/*.sh
 .vscode
 
 # experiment scripts (non-template)
-src/run[0-9].sh
+src/run[0-9].shpre_trained_models/
+datasets/

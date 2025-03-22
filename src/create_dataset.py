@@ -5,6 +5,7 @@ import pickle
 import pandas as pd
 import numpy as np
 from tqdm import tqdm_notebook
+from tqdm import tqdm
 from collections import defaultdict
 from subprocess import check_call
 
@@ -56,8 +57,8 @@ class MOSI:
                 check_call(' '.join(['mkdir', '-p', DATA_PATH]), shell=True)
             
             # load pickle file for unaligned acoustic and visual source
-            pickle_filename = '../datasets/MOSI/mosi_data_noalign.pkl'
-            csv_filename = '../datasets/MOSI/MOSI-label.csv'
+            pickle_filename = '/data/wang/junh/githubs/Multimodal-Infomax/datasets/MOSI/mosi_data_noalign.pkl'
+            csv_filename = '/data/wang/junh/githubs/Multimodal-Infomax/datasets/MOSI/MOSI-label.csv'
 
             with open(pickle_filename,'rb') as f:
                 d = pickle.load(f)
@@ -109,7 +110,7 @@ class MOSI:
 
             all_csv_id = [(vid[i], str(cid[i])) for i in range(len(vid))]
 
-            for i, idd in enumerate(all_id_list):
+            for i, idd in tqdm(enumerate(all_id_list)):
                 # get the video ID and the features out of the aligned dataset
                 idd1, idd2 = re.search(pattern, idd).group(1,2)
 
@@ -151,9 +152,27 @@ class MOSI:
                 visual = _visual[L_V - _vlen:,:]
                 acoustic = _acoustic[L_A - _alen:,:]
 
-                # z-normalization per instance and remove nan/infs
-                # visual = np.nan_to_num((visual - visual.mean(0, keepdims=True)) / (EPS + np.std(visual, axis=0, keepdims=True)))
-                # acoustic = np.nan_to_num((acoustic - acoustic.mean(0, keepdims=True)) / (EPS + np.std(acoustic, axis=0, keepdims=True)))
+                # dataset_entry = {
+                #     'words': text[index].split(),
+                #     'label': label[i].astype(np.float32),
+                #     'visual_features': np.nan_to_num(v[i][v.shape[1] - vlens[i]:, :]),
+                #     'acoustic_features': np.nan_to_num(a[i][a.shape[1] - alens[i]:, :]),
+                #     'visual_length': vlens[i],
+                #     'audio_length': alens[i],
+                #     'video_id': idd1,
+                #     'clip_id': idd2
+                # }
+
+                # if i < dev_start:
+                #     self.train.append(dataset_entry)
+                # elif i >= dev_start and i < test_start:
+                #     self.dev.append(dataset_entry)
+                # else:
+                #     self.test.append(dataset_entry)
+
+                #z-normalization per instance and remove nan/infs
+                visual = np.nan_to_num((visual - visual.mean(0, keepdims=True)) / (EPS + np.std(visual, axis=0, keepdims=True)))
+                acoustic = np.nan_to_num((acoustic - acoustic.mean(0, keepdims=True)) / (EPS + np.std(acoustic, axis=0, keepdims=True)))
                 if i < dev_start:
                     train.append(((words, visual, acoustic, actual_words, _vlen, _alen), _label, idd))
                 elif i >= dev_start and i < test_start:
@@ -178,6 +197,7 @@ class MOSI:
             to_pickle(train, DATA_PATH + '/train.pkl')
             to_pickle(dev, DATA_PATH + '/dev.pkl')
             to_pickle(test, DATA_PATH + '/test.pkl')
+            print("Pickles saved at {}".format(DATA_PATH))
 
     def get_data(self, mode):
         if mode == "train":
@@ -217,8 +237,8 @@ class MOSEI:
             # first we align to words with averaging, collapse_function receives a list of functions
             # dataset.align(text_field, collapse_functions=[avg])
             # load pickle file for unaligned acoustic and visual source
-            pickle_filename = '../datasets/MOSEI/mosei_senti_data_noalign.pkl'
-            csv_filename = '../datasets/MOSEI/MOSEI-label.csv'
+            pickle_filename = '/data/wang/junh/githubs/Multimodal-Infomax/datasets/MOSEI/mosei_senti_data_noalign.pkl'
+            csv_filename = '/data/wang/junh/githubs/Multimodal-Infomax/datasets/MOSEI/MOSEI-label.csv'
 
             with open(pickle_filename, 'rb') as f:
                 d = pickle.load(f)
@@ -271,7 +291,7 @@ class MOSEI:
 
             all_csv_id = [(vid[i], str(cid[i])) for i in range(len(vid))]
 
-            for i, idd in enumerate(all_id_list):
+            for i, idd in tqdm(enumerate(all_id_list)):
                 # get the video ID and the features out of the aligned dataset
 
                 # matching process

@@ -51,10 +51,15 @@ class SubNet(nn.Module):
             x: tensor of shape (batch_size, in_size)
         '''
         # normed = self.norm(x)
+        # x.shape = [32, 800]
         dropped = self.drop(x)
+        # y1_1.shape = [32, 128]
         y_1 = torch.tanh(self.linear_1(dropped))
+        # fusion.shape = [32, 128]
         fusion = self.linear_2(y_1)
+        # y_2.shape = [32, 128]
         y_2 = torch.tanh(self.linear_2(y_1))
+        # y_3 is scaler
         y_3 = self.linear_3(y_2)
         return y_2, y_3
 

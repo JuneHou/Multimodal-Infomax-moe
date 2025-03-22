@@ -4,7 +4,7 @@ import numpy as np
 
 from utils import *
 from torch.utils.data import DataLoader
-from solver import Solver
+from solver_ import Solver
 from config import get_args, get_config, output_dim_dict, criterion_dict
 from data_loader import get_loader
 
@@ -20,6 +20,7 @@ def set_seed(seed):
         use_cuda = True
 
 if __name__ == '__main__':
+    print("Available device: ", torch.cuda.is_available())
     args = get_args()
     dataset = str.lower(args.dataset.strip())
     

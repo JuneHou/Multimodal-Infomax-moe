@@ -65,9 +65,9 @@ def get_args():
                         help='hidden size in visual rnn')
     parser.add_argument('--d_ah', type=int, default=16,
                         help='hidden size in acoustic rnn')
-    parser.add_argument('--d_vout', type=int, default=16,
+    parser.add_argument('--d_vout', type=int, default=64,
                         help='output size in visual rnn')
-    parser.add_argument('--d_aout', type=int, default=16,
+    parser.add_argument('--d_aout', type=int, default=64,
                         help='output size in acoustic rnn')
     parser.add_argument('--bidirectional', action='store_true', help='Whether to use bidirectional rnn')
     parser.add_argument('--d_prjh', type=int, default=128,
@@ -87,7 +87,7 @@ def get_args():
     # Training Setting
     parser.add_argument('--batch_size', type=int, default=32, metavar='N',
                         help='batch size (default: 32)')
-    parser.add_argument('--clip', type=float, default=1.0,
+    parser.add_argument('--clip', type=float, default=0.8,
                         help='gradient clip value (default: 0.8)')
     parser.add_argument('--lr_main', type=float, default=1e-3,
                         help='initial learning rate for main model parameters (default: 1e-3)')
@@ -121,6 +121,8 @@ def get_args():
                         help='frequency of result logging (default: 100)')
     parser.add_argument('--seed', type=int, default=1111,
                         help='random seed')
+    parser.add_argument('--device', type=int, default=0,
+                        help='GPU device')
     args = parser.parse_args()
     return args
 

@@ -1,6 +1,7 @@
 import torch
 import os
 import io
+import time
 
 
 def save_load_name(args, name=''):
@@ -13,16 +14,18 @@ def save_load_name(args, name=''):
 
 
 def save_model(args, model, name=''):
-    # name = save_load_name(args, name)
-    name = 'best_model'
+    timestamp = time.strftime("%Y%m%d_%H%M%S")  # Generate timestamp
+    name = f"{args.dataset}_{args.lr_main}_{args.d_vh}_{args.d_vout}"  # Construct filename
+
     if not os.path.exists('pre_trained_models'):
         os.mkdir('pre_trained_models')
+
     torch.save(model.state_dict(), f'pre_trained_models/{name}.pt')
 
 
 def load_model(args, name=''):
     # name = save_load_name(args, name)
-    name = 'best_model'
+    name = f"{args.dataset}_{args.lr_main}_{args.vh}_{args.vout}"
     with open(f'pre_trained_models/{name}.pt', 'rb') as f:
         buffer = io.BytesIO(f.read())
     model = torch.load(buffer)

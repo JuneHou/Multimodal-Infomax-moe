@@ -7,7 +7,8 @@ import torch
 import torch.nn as nn
 from torch.nn.utils.rnn import pad_sequence, pack_padded_sequence, pad_packed_sequence
 from torch.utils.data import DataLoader, Dataset
-from transformers import *
+import transformers
+from transformers import BertTokenizer
 
 from create_dataset import MOSI, MOSEI, PAD, UNK
 
@@ -48,6 +49,7 @@ def get_loader(hp, config, shuffle=True):
     """Load DataLoader of given DialogDataset"""
 
     dataset = MSADataset(config)
+    device=torch.device('cuda')
     
     print(config.mode)
     config.data_len = len(dataset)
@@ -142,11 +144,12 @@ def get_loader(hp, config, shuffle=True):
             vlens[np.where(vlens == 0)] = 1
 
         return sentences, visual, vlens, acoustic, alens, labels, lengths, bert_sentences, bert_sentence_types, bert_sentence_att_mask, ids
-
+    generator = torch.Generator(device=device)
     data_loader = DataLoader(
         dataset=dataset,
         batch_size=config.batch_size,
         shuffle=shuffle,
-        collate_fn=collate_fn)
+        collate_fn=collate_fn,
+        generator=generator)
 
     return data_loader

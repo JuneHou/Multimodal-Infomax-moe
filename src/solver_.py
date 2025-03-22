@@ -13,7 +13,7 @@ from sklearn.metrics import precision_recall_fscore_support
 from sklearn.metrics import accuracy_score, f1_score
 from utils.eval_metrics import *
 from utils.tools import *
-from model import MMIM
+from model_ import MMIM
 
 class Solver(object):
     def __init__(self, hyp_params, train_loader, dev_loader, test_loader, is_train=True, model=None, pretrained_emb=None):
@@ -40,8 +40,6 @@ class Solver(object):
         self.device = torch.device("cuda")
         model = model.cuda()
         print("Model is on device: ", self.device)
-        # else:
-        #     self.device = torch.device("cpu")
 
         # criterion
         if self.hp.dataset == "ur_funny":
@@ -71,8 +69,8 @@ class Solver(object):
                     if p.dim() > 1: # only tensor with no less than 2 dimensions are possible to calculate fan_in/fan_out
                         nn.init.xavier_normal_(p)
 
-        self.optimizer_mmilb = getattr(torch.optim, self.hp.optim)(
-            mmilb_param, lr=self.hp.lr_mmilb, weight_decay=hp.weight_decay_club)
+        # self.optimizer_mmilb = getattr(torch.optim, self.hp.optim)(
+        #     mmilb_param, lr=self.hp.lr_mmilb, weight_decay=hp.weight_decay_club)
         
         optimizer_main_group = [
             {'params': bert_param, 'weight_decay': hp.weight_decay_bert, 'lr': hp.lr_bert},
@@ -83,7 +81,7 @@ class Solver(object):
             optimizer_main_group
         )
 
-        self.scheduler_mmilb = ReduceLROnPlateau(self.optimizer_mmilb, mode='min', patience=hp.when, factor=0.5, verbose=True)
+        #self.scheduler_mmilb = ReduceLROnPlateau(self.optimizer_mmilb, mode='min', patience=hp.when, factor=0.5, verbose=True)
         self.scheduler_main = ReduceLROnPlateau(self.optimizer_main, mode='min', patience=hp.when, factor=0.5, verbose=True)
 
     ####################################################################
@@ -94,10 +92,10 @@ class Solver(object):
 
     def train_and_eval(self):
         model = self.model
-        optimizer_mmilb = self.optimizer_mmilb
+        #optimizer_mmilb = self.optimizer_mmilb
         optimizer_main = self.optimizer_main
 
-        scheduler_mmilb = self.scheduler_mmilb
+        #scheduler_mmilb = self.scheduler_mmilb
         scheduler_main = self.scheduler_main
 
         # criterion for downstream task
@@ -154,72 +152,67 @@ class Solver(object):
                 else:
                     mem = {'tv': None, 'ta': None, 'va': None}
 
-                lld, nce, preds, pn_dic, H = model(text, visual, audio, vlens, alens, 
+                preds = model(text, visual, audio, vlens, alens, 
                                                 bert_sent, bert_sent_type, bert_sent_mask, y, mem)
 
-                if stage == 1:
-                    y_loss = criterion(preds, y)
+                #if stage == 1:
+                y_loss = criterion(preds, y)
+                loss = y_loss
+                loss.backward()
                     
-                    if len(mem_pos_tv) < mem_size:
-                        mem_pos_tv.append(pn_dic['tv']['pos'].detach())
-                        mem_neg_tv.append(pn_dic['tv']['neg'].detach())
-                        mem_pos_ta.append(pn_dic['ta']['pos'].detach())
-                        mem_neg_ta.append(pn_dic['ta']['neg'].detach())
-                        if self.hp.add_va:
-                            mem_pos_va.append(pn_dic['va']['pos'].detach())
-                            mem_neg_va.append(pn_dic['va']['neg'].detach())
+                    # if len(mem_pos_tv) < mem_size:
+                    #     mem_pos_tv.append(pn_dic['tv']['pos'].detach())
+                    #     mem_neg_tv.append(pn_dic['tv']['neg'].detach())
+                    #     mem_pos_ta.append(pn_dic['ta']['pos'].detach())
+                    #     mem_neg_ta.append(pn_dic['ta']['neg'].detach())
+                    #     if self.hp.add_va:
+                    #         mem_pos_va.append(pn_dic['va']['pos'].detach())
+                    #         mem_neg_va.append(pn_dic['va']['neg'].detach())
                    
-                    else: # memory is full! replace the oldest with the newest data
-                        oldest = i_batch % mem_size
-                        mem_pos_tv[oldest] = pn_dic['tv']['pos'].detach()
-                        mem_neg_tv[oldest] = pn_dic['tv']['neg'].detach()
-                        mem_pos_ta[oldest] = pn_dic['ta']['pos'].detach()
-                        mem_neg_ta[oldest] = pn_dic['ta']['neg'].detach()
+                    # else: # memory is full! replace the oldest with the newest data
+                    #     oldest = i_batch % mem_size
+                    #     mem_pos_tv[oldest] = pn_dic['tv']['pos'].detach()
+                    #     mem_neg_tv[oldest] = pn_dic['tv']['neg'].detach()
+                    #     mem_pos_ta[oldest] = pn_dic['ta']['pos'].detach()
+                    #     mem_neg_ta[oldest] = pn_dic['ta']['neg'].detach()
 
-                        if self.hp.add_va:
-                            mem_pos_va[oldest] = pn_dic['va']['pos'].detach()
-                            mem_neg_va[oldest] = pn_dic['va']['neg'].detach()
+                    #     if self.hp.add_va:
+                    #         mem_pos_va[oldest] = pn_dic['va']['pos'].detach()
+                    #         mem_neg_va[oldest] = pn_dic['va']['neg'].detach()
 
-                    if self.hp.contrast:
-                        loss = y_loss + self.alpha * nce - self.beta * lld
-                    else:
-                        loss = y_loss
-                    if i_batch > mem_size:
-                        loss -= self.beta * H
-                    loss.backward()
+                #     if self.hp.contrast:
+                #         loss = y_loss + self.alpha * nce - self.beta * lld
+                #     else:
+                #         loss = y_loss
+                #     if i_batch > mem_size:
+                #         loss -= self.beta * H
+                #     loss.backward()
                     
-                elif stage == 0:
-                    # maximize likelihood equals minimize neg-likelihood
-                    loss = -lld
-                    loss.backward()
-                else:
-                    raise ValueError('stage index can either be 0 or 1')
-                
+                # elif stage == 0:
+                #     # maximize likelihood equals minimize neg-likelihood
+                #     loss = -lld
+                #     loss.backward()
+                # else:
+                #     raise ValueError('stage index can either be 0 or 1')
                 left_batch -= 1
                 if left_batch == 0:
                     left_batch = self.update_batch
                     torch.nn.utils.clip_grad_norm_(model.parameters(), self.hp.clip)
                     optimizer.step()
-                
+
+                # Update loss tracking
                 proc_loss += loss.item() * batch_size
                 proc_size += batch_size
                 epoch_loss += loss.item() * batch_size
-                nce_loss += nce.item() * batch_size
-                ba_loss += (-H - lld) * batch_size
-
+                # Logging
                 if i_batch % self.hp.log_interval == 0 and i_batch > 0:
                     avg_loss = proc_loss / proc_size
                     elapsed_time = time.time() - start_time
-                    avg_nce = nce_loss / proc_size
-                    avg_ba = ba_loss / proc_size
-                    print('Epoch {:2d} | Batch {:3d}/{:3d} | Time/Batch(ms) {:5.2f} | Train Loss ({}) {:5.4f} | NCE {:.3f} | BA {:.4f}'.
-                        format(epoch, i_batch, num_batches, elapsed_time * 1000 / self.hp.log_interval, 'TASK+BA+CPC' if stage == 1 else 'Neg-lld',
-                        avg_loss, avg_nce, avg_ba))
+                    print('Epoch {:2d} | Batch {:3d}/{:3d} | Time/Batch(ms) {:5.2f} | Train Loss {:5.4f}'.
+                        format(epoch, i_batch, num_batches, elapsed_time * 1000 / self.hp.log_interval, avg_loss))
                     proc_loss, proc_size = 0, 0
-                    nce_loss = 0.0
-                    ba_loss = 0.0
                     start_time = time.time()
-                    
+
             return epoch_loss / self.hp.n_train
 
         def evaluate(model, criterion, test=False):
@@ -248,7 +241,7 @@ class Solver(object):
                     batch_size = lengths.size(0) # bert_sent in size (bs, seq_len, emb_size)
 
                     # we don't need lld and bound anymore
-                    _, _, preds, _, _ = model(text, vision, audio, vlens, alens, bert_sent, bert_sent_type, bert_sent_mask)
+                    preds = model(text, vision, audio, vlens, alens, bert_sent, bert_sent_type, bert_sent_mask)
 
                     if self.hp.dataset in ['mosi', 'mosei', 'mosei_senti'] and test:
                         criterion = nn.L1Loss()
@@ -305,21 +298,49 @@ class Solver(object):
                     best_epoch = epoch
                     best_mae = test_loss
                     if self.hp.dataset in ["mosei_senti", "mosei"]:
-                        eval_mosei_senti(results, truths, True)
+                        best_results_dict = eval_mosei_senti(results, truths, True)
 
                     elif self.hp.dataset == 'mosi':
-                        eval_mosi(results, truths, True)
+                        best_results_dict = eval_mosi(results, truths, True)
                     elif self.hp.dataset == 'iemocap':
-                        eval_iemocap(results, truths)
+                        best_results_dict = eval_iemocap(results, truths)
                     
                     best_results = results
                     best_truths = truths
                     print(f"Saved model at pre_trained_models/MM.pt!")
                     save_model(self.hp, model)
+                    # **LOG BEST MODEL IMMEDIATELY**
+                    log_file = f"{self.hp.dataset}_{self.hp.lr_main}_{self.hp.d_vh}_{self.hp.d_vout}_best_performance.log"
+                    with open(log_file, "a") as f:
+                        f.write(f"\nEpoch: {epoch}\n")
+                        
+                        if best_results_dict:
+                            f.write("Best Model Performance:\n")
+                            for metric, value in best_results_dict.items():
+                                f.write(f"{metric}: {value:.4f}\n")
+                        
+                        f.write("=" * 50 + "\n")
             else:
                 patience -= 1
                 if patience == 0:
                     break
+        
+        log_file = f"{self.hp.dataset}_{self.hp.lr_main}_{self.hp.d_vh}_{self.hp.d_vout}_best_performance.log"
+
+        # Save the best epoch and results to a file
+        with open(log_file, "a") as f:  # "a" for append mode, so it doesn't overwrite previous logs
+            f.write(f"\nBest epoch: {best_epoch}\n")
+
+            if self.hp.dataset in ["mosei_senti", "mosei"]:
+                best_results_str = eval_mosei_senti(best_results, best_truths, True)
+                f.write(f"Best MOSI/MOSEI Sentiment Results: {best_results_str}\n")
+            
+            elif self.hp.dataset == "mosi":
+                self.best_dict = eval_mosi(best_results, best_truths, True)
+                f.write(f"Best MOSI Results: {self.best_dict}\n")
+
+            f.write("=" * 50 + "\n")
+        f.close()
 
         print(f'Best epoch: {best_epoch}')
         if self.hp.dataset in ["mosei_senti", "mosei"]:

@@ -97,9 +97,12 @@ class MMIM(nn.Module):
         """
         enc_word = self.text_enc(sentences, bert_sent, bert_sent_type, bert_sent_mask) # (batch_size, seq_len, emb_size)
         text = enc_word[:,0,:] # (batch_size, emb_size)
+        # torch.Size([32, 768])
 
         acoustic = self.acoustic_enc(acoustic, a_len)
+        # torch.Size([32, 16])
         visual = self.visual_enc(visual, v_len)
+        # torch.Size([32, 16]) 
 
         if y is not None:
             lld_tv, tv_pn, H_tv = self.mi_tv(x=text, y=visual, labels=y, mem=mem['tv'])
@@ -108,6 +111,7 @@ class MMIM(nn.Module):
             if self.add_va:
                 lld_va, va_pn, H_va = self.mi_va(x=visual, y=acoustic, labels=y, mem=mem['va'])
         else:
+            # three scalers
             lld_tv, tv_pn, H_tv = self.mi_tv(x=text, y=visual)
             lld_ta, ta_pn, H_ta = self.mi_ta(x=text, y=acoustic)
             if self.add_va:
@@ -115,7 +119,9 @@ class MMIM(nn.Module):
 
 
         # Linear proj and pred
+        # torch.cat([text, acoustic, visual], dim=1) shape = torch.Size([32, 800]), 800 = 768 + 16 + 16
         fusion, preds = self.fusion_prj(torch.cat([text, acoustic, visual], dim=1))
+        # fusion shape = torch.Size([32, 128])
 
         nce_t = self.cpc_zt(text, fusion)
         nce_v = self.cpc_zv(visual, fusion)

@@ -1,7 +1,7 @@
 from torch.autograd import Function
 import torch.nn as nn
 import torch
-import torch.autograd.functional as F
+import torch.nn.functional as F
 
 """
 Adapted from https://github.com/fungtion/DSN/blob/master/functions.py
