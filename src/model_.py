@@ -40,13 +40,13 @@ class MultiModalEncoder(nn.Module):
         output_dim = 0
         if 'text' in hp.modality:
             self.text_proj = ModalProjection(text_dim, hidden_dim)
-            output_dim += 768
+            output_dim += hidden_dim
         if 'video' in hp.modality:
             self.visual_proj = ModalProjection(vis_dim, hidden_dim)
-            output_dim += hp.d_vout
+            output_dim += hidden_dim
         if 'audio' in hp.modality:
             self.acoustic_proj = ModalProjection(aud_dim, hidden_dim)
-            output_dim += hp.a_aout
+            output_dim += hidden_dim
         self.fusion_transformer = TransformerCrossEncoder(
             hp,
             embed_dim= hidden_dim,
