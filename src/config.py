@@ -125,7 +125,7 @@ def get_args():
                         help='number of experts in MoE')
     parser.add_argument('--moe_router', type=str, default='permod',
                         help='router type in MoE')
-    parser.add_argument('--modality', type=str, default='all',
+    parser.add_argument('--modality', type=str, default='text_audio_video',
                         help='modality to use in MoE')
     parser.add_argument('--num_modality', type=int, default=3,
                         help='number of modality to use in MoE')

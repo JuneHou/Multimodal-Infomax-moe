@@ -160,14 +160,14 @@ class MoE(nn.Module):
     def __init__(self, config: MoEConfig):
         super(MoE, self).__init__()
         self.noisy_gating = config.noisy_gating
-        self.num_experts = 9
+        self.num_experts = config.num_experts
         self.output_size = config.moe_output_size
-        self.input_size = 128*3
+        self.input_size = 128*config.num_modalities
         self.hidden_size = config.moe_hidden_size
         self.k = config.top_k
         self.disjoint_k = config.disjoint_top_k
         self.router_type = config.router_type
-        self.num_modalities = 3
+        self.num_modalities = config.num_modalities
         self.gating = config.gating
 
         # instantiate experts

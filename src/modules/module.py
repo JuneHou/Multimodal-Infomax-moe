@@ -185,7 +185,7 @@ class TransformerCrossEncoder(nn.Module):
     """
 
     def __init__(self, args, embed_dim, num_heads, layers, device, attn_dropout=0.0, relu_dropout=0.0, res_dropout=0.0,
-                 embed_dropout=0.0, attn_mask=False, q_seq_len_1=None, q_seq_len_2=None, num_modalities=3):
+                 embed_dropout=0.0, attn_mask=False, q_seq_len_1=None, q_seq_len_2=None, num_modalities=3, output_dim=800):
         super().__init__()
         self.dropout = embed_dropout      # Embedding dropout
         self.attn_dropout = attn_dropout
@@ -220,7 +220,8 @@ class TransformerCrossEncoder(nn.Module):
                                                     relu_dropout=relu_dropout,
                                                     res_dropout=res_dropout,
                                                     attn_mask=attn_mask,
-                                                    num_modalities=num_modalities)
+                                                    num_modalities=num_modalities,
+                                                    output_dim=output_dim)
             self.layers.append(new_layer)
 
         self.normalize = True
@@ -270,7 +271,7 @@ class TransformerCrossEncoder(nn.Module):
 
 class TransformerCrossEncoderLayer(nn.Module):
     def __init__(self, hp, embed_dim, device, num_heads=4, attn_dropout=0.1, relu_dropout=0.1, res_dropout=0.1, 
-                 attn_mask=False, num_modalities=3):
+                 attn_mask=False, num_modalities=3, output_dim=800):
         super().__init__()
         self.args = hp
         self.device = device
@@ -344,7 +345,7 @@ class TransformerCrossEncoderLayer(nn.Module):
             num_experts=hp.moe_experts,
             moe_input_size=128*hp.num_modality,
             moe_hidden_size=hp.moe_hidden_size,
-            moe_output_size=768 + hp.d_vout + hp.d_aout,
+            moe_output_size=output_dim,
             top_k=2,
             router_type=hp.moe_router,
             num_modalities=hp.num_modality,

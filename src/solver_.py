@@ -91,6 +91,7 @@ class Solver(object):
     ####################################################################
 
     def train_and_eval(self):
+        log_file = f"/data/wang/junh/results/MMIM/{self.hp.dataset}_{self.hp.modality}_{self.hp.lr_main}_{self.hp.d_vh}_{self.hp.d_vout}_best_performance.log"
         model = self.model
         #optimizer_mmilb = self.optimizer_mmilb
         optimizer_main = self.optimizer_main
@@ -310,7 +311,6 @@ class Solver(object):
                     print(f"Saved model at pre_trained_models/MM.pt!")
                     save_model(self.hp, model)
                     # **LOG BEST MODEL IMMEDIATELY**
-                    log_file = f"{self.hp.dataset}_{self.hp.lr_main}_{self.hp.d_vh}_{self.hp.d_vout}_best_performance.log"
                     with open(log_file, "a") as f:
                         f.write(f"\nEpoch: {epoch}\n")
                         
@@ -324,8 +324,6 @@ class Solver(object):
                 patience -= 1
                 if patience == 0:
                     break
-        
-        log_file = f"{self.hp.dataset}_{self.hp.lr_main}_{self.hp.d_vh}_{self.hp.d_vout}_best_performance.log"
 
         # Save the best epoch and results to a file
         with open(log_file, "a") as f:  # "a" for append mode, so it doesn't overwrite previous logs
