@@ -134,7 +134,8 @@ datasets
 # checkpoints and jupyter tempory files
 src/checkpoints
 src/*.ipynb
-src/pre_trained_models
+pre_trained_models
+datasets
 src/result
 src/__pycache__
 src/*.sh

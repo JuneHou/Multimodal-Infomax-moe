@@ -192,7 +192,7 @@ class TransformerCrossEncoder(nn.Module):
         self.embed_dim = embed_dim
         self.embed_scale = math.sqrt(embed_dim)
         self.device=device
-        self.num_modalities=3
+        self.num_modalities=args.num_modality
 
         # self.q_seq_len_1=q_seq_len_1 
         # # seq_len_1 is tt_max, the longest sequence length, which is 48 for 48 hrs
@@ -341,13 +341,13 @@ class TransformerCrossEncoderLayer(nn.Module):
         self.pre_ffn_layer_norm = nn.ModuleList([nn.LayerNorm(self.embed_dim) for _ in range(num_modalities)])
         
         moe_config = MoEConfig(            
-            num_experts=16,
-            moe_input_size=128*3,
-            moe_hidden_size=768,
+            num_experts=hp.moe_experts,
+            moe_input_size=128*hp.num_modality,
+            moe_hidden_size=hp.moe_hidden_size,
             moe_output_size=768 + hp.d_vout + hp.d_aout,
             top_k=2,
-            router_type='permod',
-            num_modalities=3,
+            router_type=hp.moe_router,
+            num_modalities=hp.num_modality,
             gating='laplace')
         self.moe = MoE(moe_config)
         self.moe = self.moe.to(device)

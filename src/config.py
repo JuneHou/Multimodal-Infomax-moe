@@ -116,6 +116,20 @@ def get_args():
     parser.add_argument('--update_batch', type=int, default=1,
                         help='update batch interval')
 
+    # MoE
+    parser.add_argument('--moe_layers', type=int, default=2, 
+                        help='number of layers in MoE')
+    parser.add_argument('--moe_hidden_size', type=int, default=768,
+                        help='hidden size in MoE')
+    parser.add_argument('--moe_experts', type=int, default=16,
+                        help='number of experts in MoE')
+    parser.add_argument('--moe_router', type=str, default='permod',
+                        help='router type in MoE')
+    parser.add_argument('--modality', type=str, default='all',
+                        help='modality to use in MoE')
+    parser.add_argument('--num_modality', type=int, default=3,
+                        help='number of modality to use in MoE')
+
     # Logistics
     parser.add_argument('--log_interval', type=int, default=100,
                         help='frequency of result logging (default: 100)')

@@ -44,7 +44,7 @@ class MultiModalEncoder(nn.Module):
             hp,
             embed_dim= hidden_dim,
             num_heads=n_heads,
-            layers=2,
+            layers=hp.moe_layers,
             device=self.device)  # Pass the device object)
 
         self.fusion_prj = SubNet(
@@ -109,7 +109,7 @@ class MMIM(nn.Module):
             aud_dim=hp.d_aout, 
             hidden_dim=128, 
             n_heads=8, 
-            n_layers=3, 
+            n_layers=hp.moe_layers, 
             device=self.device)
 
         
