@@ -26,9 +26,9 @@ if __name__ == '__main__':
     
     set_seed(args.seed)
     print("Start loading the data....")
-    train_config = get_config(dataset, mode='train', batch_size=args.batch_size)
-    valid_config = get_config(dataset, mode='valid', batch_size=args.batch_size)
-    test_config = get_config(dataset, mode='test',  batch_size=args.batch_size)
+    train_config = get_config(args.n_class, dataset=dataset, mode='train', batch_size=args.batch_size)
+    valid_config = get_config(args.n_class, dataset, mode='valid', batch_size=args.batch_size)
+    test_config = get_config(args.n_class, dataset, mode='test',  batch_size=args.batch_size)
 
     # pretrained_emb saved in train_config here
     train_loader = get_loader(args, train_config, shuffle=True)
@@ -48,7 +48,6 @@ if __name__ == '__main__':
     args.d_tin, args.d_vin, args.d_ain = train_config.tva_dim
     args.dataset = args.data = dataset
     args.when = args.when
-    args.n_class = output_dim_dict.get(dataset, 1)
     args.criterion = criterion_dict.get(dataset, 'MSELoss')
 
     solver = Solver(args, train_loader=train_loader, dev_loader=valid_loader,

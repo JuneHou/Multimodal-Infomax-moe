@@ -43,6 +43,8 @@ class SubNet(nn.Module):
         self.drop = nn.Dropout(p=dropout)
         self.linear_1 = nn.Linear(in_size, hidden_size)
         self.linear_2 = nn.Linear(hidden_size, hidden_size)
+        if n_class == 2:
+            n_class = 1
         self.linear_3 = nn.Linear(hidden_size, n_class)
 
     def forward(self, x):

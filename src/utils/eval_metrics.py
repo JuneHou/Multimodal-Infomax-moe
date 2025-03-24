@@ -65,3 +65,48 @@ def eval_mosei_senti(results, truths, exclude_zero=False):
 
 def eval_mosi(results, truths, exclude_zero=False):
     return eval_mosei_senti(results, truths, exclude_zero)
+
+def eval_categorical_labels(results, truths, n_class):
+    """
+    Evaluates classification performance for binary, 5-class, and 7-class categorical labels.
+
+    Args:
+        results (torch.Tensor): Model predictions (logits before softmax/sigmoid).
+        truths (torch.Tensor): Ground truth categorical labels.
+        n_class (int): Number of classes (2 for binary, 5 for 5-class, 7 for 7-class).
+
+    Returns:
+        dict: A dictionary with evaluation metrics.
+    """
+
+    # Convert tensors to numpy arrays
+    
+    test_truth = truths.view(-1).cpu().detach().numpy()
+
+    # Binary Classification (n_class == 2)
+    if n_class == 2:
+        test_preds = results.view(-1).cpu().detach().numpy()
+        test_preds_bin = (test_preds > 0.5).astype(int)  # Convert logits to binary labels (0 or 1)
+        acc = accuracy_score(test_truth, test_preds_bin)
+        f1 = f1_score(test_truth, test_preds_bin, average='weighted')
+
+        print(f"Binary Classification Metrics")
+        print(f"Accuracy: {acc:.4f}")
+        print(f"F1 Score: {f1:.4f}")
+        print("-" * 50)
+
+        return {'accuracy': acc, 'f1_score': f1}
+
+    # Multi-Class Classification (n_class = 5 or 7)
+    elif n_class in [5, 7]:
+        test_preds = results.cpu().detach().numpy()
+        test_preds_class = np.argmax(test_preds, axis=-1)  # Convert logits to class labels
+        acc = accuracy_score(test_truth, test_preds_class)
+        f1 = f1_score(test_truth, test_preds_class, average='weighted')
+
+        print(f"Multi-Class ({n_class}) Classification Metrics")
+        print(f"Accuracy: {acc:.4f}")
+        print(f"F1 Score: {f1:.4f}")
+        print("-" * 50)
+
+        return {'accuracy': acc, 'f1_score': f1}

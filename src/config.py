@@ -44,6 +44,8 @@ def get_args():
                         help='dataset to use (default: mosei)')
     parser.add_argument('--data_path', type=str, default='datasets',
                         help='path for storing the dataset')
+    parser.add_argument('--n_class', type=int, default=1,
+                        help='number of classes')
 
     # Dropouts
     parser.add_argument('--dropout_a', type=float, default=0.1,
@@ -152,9 +154,11 @@ def str2bool(v):
 
 
 class Config(object):
-    def __init__(self, data, mode='train'):
+    def __init__(self, n_class, data, mode='train'):
         """Configuration Class: set kwargs as class attributes with setattr"""
         self.dataset_dir = data_dict[data.lower()]
+        if n_class != 1:
+            self.dataset_dir = self.dataset_dir.joinpath(str(n_class))
         self.sdk_dir = sdk_dir
         self.mode = mode
         # Glove path
@@ -170,8 +174,8 @@ class Config(object):
         return config_str
 
 
-def get_config(dataset='mosi', mode='train', batch_size=32):
-    config = Config(data=dataset, mode=mode)
+def get_config(n_class, dataset='mosi', mode='train', batch_size=32):
+    config = Config(n_class, data=dataset, mode=mode)
     
     config.dataset = dataset
     config.batch_size = batch_size

@@ -81,15 +81,20 @@ def get_loader(hp, config, shuffle=True):
             else:   # aligned cases
                 v_lens.append(torch.IntTensor([len(sample[0][3])]))
                 a_lens.append(torch.IntTensor([len(sample[0][3])]))
-            labels.append(torch.from_numpy(sample[1]))
+            label = sample[1]
+            if isinstance(label, np.float32):
+                label = torch.IntTensor([label])
+            else:
+                label = torch.from_numpy(sample[1])
+            labels.append(label)
             ids.append(sample[2])
         vlens = torch.cat(v_lens)
         alens = torch.cat(a_lens)
         labels = torch.cat(labels, dim=0)
         
         # MOSEI sentiment labels locate in the first column of sentiment matrix
-        if labels.size(1) == 7:
-            labels = labels[:,0][:,None]
+        # if labels.size(1) == 7:
+        #     labels = labels[:,0][:,None]
 
         # Rewrite this
         def pad_sequence(sequences, target_len=-1, batch_first=False, padding_value=0.0):

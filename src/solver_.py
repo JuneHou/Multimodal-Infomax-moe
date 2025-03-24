@@ -42,8 +42,10 @@ class Solver(object):
         print("Model is on device: ", self.device)
 
         # criterion
-        if self.hp.dataset == "ur_funny":
+        if self.hp.dataset == "ur_funny" or self.hp.n_class > 2:
             self.criterion = criterion = nn.CrossEntropyLoss(reduction="mean")
+        elif self.hp.n_class == 2:
+            self.criterion = criterion = nn.BCEWithLogitsLoss(reduction="mean")
         else: # mosi and mosei are regression datasets
             self.criterion = criterion = nn.L1Loss(reduction="mean")
         
@@ -91,7 +93,7 @@ class Solver(object):
     ####################################################################
 
     def train_and_eval(self):
-        log_file = f"/data/wang/junh/results/MMIM/{self.hp.dataset}_{self.hp.modality}_{self.hp.lr_main}_{self.hp.d_vh}_{self.hp.d_vout}_best_performance.log"
+        log_file = f"/data/wang/junh/results/MMIM/{self.hp.dataset}_{self.hp.modality}_{self.hp.n_class}_{self.hp.lr_main}_{self.hp.d_vh}_{self.hp.d_vout}_best_performance.log"
         model = self.model
         #optimizer_mmilb = self.optimizer_mmilb
         optimizer_main = self.optimizer_main
@@ -156,45 +158,19 @@ class Solver(object):
                 preds = model(text, visual, audio, vlens, alens, 
                                                 bert_sent, bert_sent_type, bert_sent_mask, y, mem)
 
+                if self.hp.n_class == 2:
+                    preds = preds.squeeze()
+                    #preds = (preds > 0.5).float()
+                    y = y.float()
+                elif self.hp.n_class > 2:
+                    #preds = preds.argmax(dim=-1)
+                    y = y.long().squeeze()
+
                 #if stage == 1:
                 y_loss = criterion(preds, y)
                 loss = y_loss
                 loss.backward()
-                    
-                    # if len(mem_pos_tv) < mem_size:
-                    #     mem_pos_tv.append(pn_dic['tv']['pos'].detach())
-                    #     mem_neg_tv.append(pn_dic['tv']['neg'].detach())
-                    #     mem_pos_ta.append(pn_dic['ta']['pos'].detach())
-                    #     mem_neg_ta.append(pn_dic['ta']['neg'].detach())
-                    #     if self.hp.add_va:
-                    #         mem_pos_va.append(pn_dic['va']['pos'].detach())
-                    #         mem_neg_va.append(pn_dic['va']['neg'].detach())
-                   
-                    # else: # memory is full! replace the oldest with the newest data
-                    #     oldest = i_batch % mem_size
-                    #     mem_pos_tv[oldest] = pn_dic['tv']['pos'].detach()
-                    #     mem_neg_tv[oldest] = pn_dic['tv']['neg'].detach()
-                    #     mem_pos_ta[oldest] = pn_dic['ta']['pos'].detach()
-                    #     mem_neg_ta[oldest] = pn_dic['ta']['neg'].detach()
 
-                    #     if self.hp.add_va:
-                    #         mem_pos_va[oldest] = pn_dic['va']['pos'].detach()
-                    #         mem_neg_va[oldest] = pn_dic['va']['neg'].detach()
-
-                #     if self.hp.contrast:
-                #         loss = y_loss + self.alpha * nce - self.beta * lld
-                #     else:
-                #         loss = y_loss
-                #     if i_batch > mem_size:
-                #         loss -= self.beta * H
-                #     loss.backward()
-                    
-                # elif stage == 0:
-                #     # maximize likelihood equals minimize neg-likelihood
-                #     loss = -lld
-                #     loss.backward()
-                # else:
-                #     raise ValueError('stage index can either be 0 or 1')
                 left_batch -= 1
                 if left_batch == 0:
                     left_batch = self.update_batch
@@ -244,8 +220,20 @@ class Solver(object):
                     # we don't need lld and bound anymore
                     preds = model(text, vision, audio, vlens, alens, bert_sent, bert_sent_type, bert_sent_mask)
 
+                    if self.hp.n_class == 2:
+                        preds = preds.squeeze()
+                        #preds = (preds > 0.5).float()
+                        y = y.float()
+                    elif self.hp.n_class > 2:
+                        #preds = preds.argmax(dim=-1)
+                        y = y.long().squeeze()
+
                     if self.hp.dataset in ['mosi', 'mosei', 'mosei_senti'] and test:
                         criterion = nn.L1Loss()
+                    if self.hp.n_class == 2:
+                        criterion = nn.BCEWithLogitsLoss()
+                    elif self.hp.n_class > 2:
+                        criterion = nn.CrossEntropyLoss()
 
                     total_loss += criterion(preds, y).item() * batch_size
 
@@ -298,18 +286,19 @@ class Solver(object):
                 elif test_loss < best_mae:
                     best_epoch = epoch
                     best_mae = test_loss
-                    if self.hp.dataset in ["mosei_senti", "mosei"]:
+                    if self.hp.dataset in ["mosei_senti", "mosei"] and self.hp.n_class == 1:
                         best_results_dict = eval_mosei_senti(results, truths, True)
-
-                    elif self.hp.dataset == 'mosi':
+                    elif self.hp.dataset == 'mosi' and self.hp.n_class == 1:
                         best_results_dict = eval_mosi(results, truths, True)
                     elif self.hp.dataset == 'iemocap':
                         best_results_dict = eval_iemocap(results, truths)
+                    elif self.hp.dataset in ["mosi", "mosei_senti", "mosei"] and self.hp.n_class > 1:
+                        best_results_dict = eval_categorical_labels(results, truths, self.hp.n_class)
                     
                     best_results = results
                     best_truths = truths
-                    print(f"Saved model at pre_trained_models/MM.pt!")
-                    save_model(self.hp, model)
+                    #print(f"Saved model at pre_trained_models/MM.pt!")
+                    #save_model(self.hp, model)
                     # **LOG BEST MODEL IMMEDIATELY**
                     with open(log_file, "a") as f:
                         f.write(f"\nEpoch: {epoch}\n")
@@ -320,31 +309,58 @@ class Solver(object):
                                 f.write(f"{metric}: {value:.4f}\n")
                         
                         f.write("=" * 50 + "\n")
+            elif test_loss < best_mae:
+                patience = self.hp.patience
+                best_epoch = epoch
+                best_mae = test_loss
+                if self.hp.dataset in ["mosei_senti", "mosei"] and self.hp.n_class == 1:
+                    best_results_dict = eval_mosei_senti(results, truths, True)
+                elif self.hp.dataset == 'mosi' and self.hp.n_class == 1:
+                    best_results_dict = eval_mosi(results, truths, True)
+                elif self.hp.dataset == 'iemocap':
+                    best_results_dict = eval_iemocap(results, truths)
+                elif self.hp.dataset in ["mosi", "mosei_senti", "mosei"] and self.hp.n_class > 1:
+                    best_results_dict = eval_categorical_labels(results, truths, self.hp.n_class)
+                
+                best_results = results
+                best_truths = truths
+                #print(f"Saved model at pre_trained_models/MM.pt!")
+                #save_model(self.hp, model)
+                # **LOG BEST MODEL IMM
+                with open(log_file, "a") as f:
+                    f.write(f"\nEpoch: {epoch}\n")
+                    
+                    if best_results_dict:
+                        f.write("Best Model Performance:\n")
+                        for metric, value in best_results_dict.items():
+                            f.write(f"{metric}: {value:.4f}\n")
+                    
+                    f.write("=" * 50 + "\n")
             else:
                 patience -= 1
                 if patience == 0:
                     break
 
-        # Save the best epoch and results to a file
-        with open(log_file, "a") as f:  # "a" for append mode, so it doesn't overwrite previous logs
-            f.write(f"\nBest epoch: {best_epoch}\n")
+        # # Save the best epoch and results to a file
+        # with open(log_file, "a") as f:  # "a" for append mode, so it doesn't overwrite previous logs
+        #     f.write(f"\nBest epoch: {best_epoch}\n")
 
-            if self.hp.dataset in ["mosei_senti", "mosei"]:
-                best_results_str = eval_mosei_senti(best_results, best_truths, True)
-                f.write(f"Best MOSI/MOSEI Sentiment Results: {best_results_str}\n")
+        #     if self.hp.dataset in ["mosei_senti", "mosei"]:
+        #         best_results_str = eval_mosei_senti(best_results, best_truths, True)
+        #         f.write(f"Best MOSI/MOSEI Sentiment Results: {best_results_str}\n")
             
-            elif self.hp.dataset == "mosi":
-                self.best_dict = eval_mosi(best_results, best_truths, True)
-                f.write(f"Best MOSI Results: {self.best_dict}\n")
+        #     elif self.hp.dataset == "mosi":
+        #         self.best_dict = eval_mosi(best_results, best_truths, True)
+        #         f.write(f"Best MOSI Results: {self.best_dict}\n")
 
-            f.write("=" * 50 + "\n")
-        f.close()
+        #     f.write("=" * 50 + "\n")
+        # f.close()
 
-        print(f'Best epoch: {best_epoch}')
-        if self.hp.dataset in ["mosei_senti", "mosei"]:
-            eval_mosei_senti(best_results, best_truths, True)
-        elif self.hp.dataset == 'mosi':
-            self.best_dict = eval_mosi(best_results, best_truths, True)
-        elif self.hp.dataset == 'iemocap':
-            eval_iemocap(results, truths)       
-        sys.stdout.flush()
+        # print(f'Best epoch: {best_epoch}')
+        # if self.hp.dataset in ["mosei_senti", "mosei"]:
+        #     eval_mosei_senti(best_results, best_truths, True)
+        # elif self.hp.dataset == 'mosi':
+        #     self.best_dict = eval_mosi(best_results, best_truths, True)
+        # elif self.hp.dataset == 'iemocap':
+        #     eval_iemocap(results, truths)       
+        # sys.stdout.flush()

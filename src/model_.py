@@ -37,6 +37,7 @@ class MultiModalEncoder(nn.Module):
     def __init__(self, hp, text_dim=768, vis_dim=16, aud_dim=16, hidden_dim=128, n_heads=8, n_layers=3, device=None):
         super(MultiModalEncoder, self).__init__()
         self.device = torch.device("cuda")
+        self.hp = hp
         output_dim = 0
         if 'text' in hp.modality:
             self.text_proj = ModalProjection(text_dim, hidden_dim)
@@ -58,7 +59,7 @@ class MultiModalEncoder(nn.Module):
         self.fusion_prj = SubNet(
             in_size = hidden_dim * hp.num_modality,
             hidden_size = 128,
-            n_class = 1,
+            n_class = hp.n_class,
             dropout = 0.1
         )
 
@@ -84,7 +85,11 @@ class MultiModalEncoder(nn.Module):
         fused_output, _ = self.fusion_transformer(combined, modality)  # Back to (batch, 3, 128)
         fused_output = torch.cat(fused_output, dim=1)
 
-        _, fused_output = self.fusion_prj(fused_output)
+        _, fused_output = self.fusion_prj(fused_output) # logits is for categorical labels
+        if self.hp.n_class == 2:
+            fused_output = torch.sigmoid(fused_output)
+        elif self.hp.n_class > 2:
+            fused_output = torch.softmax(fused_output, dim=-1)
         return fused_output
 
 

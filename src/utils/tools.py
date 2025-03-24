@@ -15,7 +15,7 @@ def save_load_name(args, name=''):
 
 def save_model(args, model, name=''):
     timestamp = time.strftime("%Y%m%d_%H%M%S")  # Generate timestamp
-    name = f"{args.dataset}_{args.modality}_{args.lr_main}_{args.d_vh}_{args.d_vout}"  # Construct filename
+    name = f"{args.dataset}_{args.modality}_{agrs.n_class}_{args.lr_main}_{args.d_vh}_{args.d_vout}"  # Construct filename
 
     if not os.path.exists('pre_trained_models'):
         os.mkdir('pre_trained_models')
@@ -25,7 +25,7 @@ def save_model(args, model, name=''):
 
 def load_model(args, name=''):
     # name = save_load_name(args, name)
-    name = f"{args.dataset}_{args.modality}_{args.lr_main}_{args.vh}_{args.vout}"
+    name = f"{args.dataset}_{args.modality}_{agrs.n_class}_{args.lr_main}_{args.d_vh}_{args.d_vout}"
     with open(f'pre_trained_models/{name}.pt', 'rb') as f:
         buffer = io.BytesIO(f.read())
     model = torch.load(buffer)

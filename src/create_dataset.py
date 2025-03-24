@@ -32,6 +32,20 @@ def return_unk():
 def get_length(x):
     return x.shape[1]-(np.sum(x, axis=-1) == 0).sum(1)
 
+def convert_to_category(sentiment_scores, num_classes):
+    # has 0
+    cat_labels = np.zeros(len(sentiment_scores))
+    for i in range(len(sentiment_scores)):
+        if num_classes == 2:
+            cat_labels[i] = 1 if sentiment_scores[i] > 0 else 0
+        elif num_classes == 5:
+            sentiment_scores = np.clip(sentiment_scores, a_min=-2, a_max=2)  # Clip to [-2, 2]
+            cat_labels = np.digitize(sentiment_scores, bins=[-2, -1, 0, 1, 2]) - 1
+        elif num_classes == 7:
+            sentiment_scores = np.clip(sentiment_scores, a_min=-3, a_max=3)
+            cat_labels = np.digitize(sentiment_scores, bins=[-3, -2, -1, 0, 1, 2, 3]) - 1
+    return cat_labels
+
 class MOSI:
     def __init__(self, config):
         if config.sdk_dir is None:
@@ -41,6 +55,8 @@ class MOSI:
             sys.path.append(str(config.sdk_dir))
         
         DATA_PATH = str(config.dataset_dir)
+        # output to folder named with number of classes
+        #OUTPUT_PATH = DATA_PATH + '/' + str(config.n_class)
         CACHE_PATH = DATA_PATH + '/embedding_and_mapping.pt'
 
         # If cached data if already exists
@@ -94,6 +110,13 @@ class MOSI:
                 alens = get_length(a)
                 
                 label = np.concatenate((train_split_noalign['labels'],dev_split_noalign['labels'], test_split_noalign['labels']),axis=0)
+
+                if config.n_class == 2:
+                    label = convert_to_category(label, 2)
+                elif config.n_class == 5:
+                    label = convert_to_category(label, 5)
+                elif config.n_class == 7:
+                    label = convert_to_category(label, 7)
 
                 L_V = v.shape[1]
                 L_A = a.shape[1]
@@ -194,10 +217,10 @@ class MOSI:
             # torch.save((pretrained_emb, word2id), CACHE_PATH)
 
             # Save pickles
-            to_pickle(train, DATA_PATH + '/train.pkl')
-            to_pickle(dev, DATA_PATH + '/dev.pkl')
-            to_pickle(test, DATA_PATH + '/test.pkl')
-            print("Pickles saved at {}".format(DATA_PATH))
+            to_pickle(train, OUTPUT_PATH + '/train.pkl')
+            to_pickle(dev, OUTPUT_PATH + '/dev.pkl')
+            to_pickle(test, OUTPUT_PATH + '/test.pkl')
+            print("Pickles saved at {}".format(OUTPUT_PATH))
 
     def get_data(self, mode):
         if mode == "train":
@@ -220,6 +243,7 @@ class MOSEI:
             sys.path.append(str(config.sdk_dir))
         
         DATA_PATH = str(config.dataset_dir)
+        #OUTPUT_PATH = DATA_PATH + '/' + str(config.n_class)
         CACHE_PATH = DATA_PATH + '/embedding_and_mapping.pt'
 
         # If cached data if already exists
@@ -274,6 +298,14 @@ class MOSEI:
             alens = get_length(a)
             
             label = np.concatenate((train_split_noalign['labels'],dev_split_noalign['labels'], test_split_noalign['labels']),axis=0)
+
+            if config.n_class == 2:
+                label = convert_to_category(label, 2)
+            elif config.n_class == 5:
+                label = convert_to_category(label, 5)
+            elif config.n_class == 7:
+                label = convert_to_category(label, 7)
+
 
             L_V = v.shape[1]
             L_A = a.shape[1]
@@ -351,9 +383,9 @@ class MOSEI:
             self.pretrained_emb = None
 
             # Save pickles
-            to_pickle(train, DATA_PATH + '/train.pkl')
-            to_pickle(dev, DATA_PATH + '/dev.pkl')
-            to_pickle(test, DATA_PATH + '/test.pkl')
+            to_pickle(train, OUTPUT_PATH + '/train.pkl')
+            to_pickle(dev, OUTPUT_PATH + '/dev.pkl')
+            to_pickle(test, OUTPUT_PATH + '/test.pkl')
 
     def get_data(self, mode):
 
