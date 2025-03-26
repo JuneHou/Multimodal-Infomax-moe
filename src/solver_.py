@@ -107,7 +107,7 @@ class Solver(object):
             shutil.rmtree(new_weights_path)
             print(f"Deleted previous weight folder: {new_weights_path}")
         smooth_factor = 0.5
-        decay_rate = 0.1
+        decay_rate = 0.05
         
         model = self.model
         #optimizer_mmilb = self.optimizer_mmilb
@@ -337,40 +337,36 @@ class Solver(object):
                     best_results = results
                     best_truths = truths
 
+                    save_results(train_ids, train_results, train_truths, "train", self.output_dir)
+                    save_results(val_ids, val_results, val_truths, "dev", self.output_dir)
+                    save_results(ids, results, truths, "test", self.output_dir)
+
+                    ### Update KL divergence-based weights
+                    update_kl_weights(self.hp, epoch, smooth_factor, ['train', 'dev', 'test'], new_weights_path)
+                    
+                    
+                    ### Update smooth factor
+                    f1_delta = all_f1 - best_f1
+                    best_f1 = all_f1
+                    if f1_delta > 0:
+                        smooth_factor = min(smooth_factor + decay_rate, 1)  # Cap at 1 to avoid overshooting
+                    else:
+                        smooth_factor = max(smooth_factor - decay_rate, 0)
+                    print("New smooth factor: ", smooth_factor)
+
+                    # **Reload Dataset with Updated Weights**
+                    print("Reloading dataset with updated weights...")
+                    
+                    # Update file paths to point to new_weights directory
+                    self.hp.dataset_path = new_weights_path  # Ensure the new path is used
+
+                    self.train_loader = get_loader(self.hp, self.hp, shuffle=True, mode='train')
+                    self.dev_loader = get_loader(self.hp, self.hp, shuffle=False, mode='dev')
+                    self.test_loader = get_loader(self.hp, self.hp, shuffle=False, mode='test')
+
+                    print("Dataset reloaded successfully!")
+
                     if all_f1 > best_f1:
-                        save_results(train_ids, train_results, train_truths, "train", self.output_dir)
-                        save_results(val_ids, val_results, val_truths, "dev", self.output_dir)
-                        save_results(ids, results, truths, "test", self.output_dir)
-
-                        ### Update KL divergence-based weights
-                        update_kl_weights(self.hp, epoch, smooth_factor, ['train', 'dev', 'test'], new_weights_path)
-                        
-                        
-                        ### Update smooth factor
-                        f1_delta = all_f1 - best_f1
-                        best_f1 = all_f1
-                        if f1_delta > 0:
-                            smooth_factor = min(smooth_factor + decay_rate, 1)  # Cap at 1 to avoid overshooting
-                        else:
-                            smooth_factor = max(smooth_factor - decay_rate, 0)
-
-                        # **Reload Dataset with Updated Weights**
-                        print("Reloading dataset with updated weights...")
-                        
-                        # Update file paths to point to new_weights directory
-                        self.hp.dataset_path = new_weights_path  # Ensure the new path is used
-
-                        # # Reload dataset and dataloaders
-                        # train_config.dataset_dir = new_weights_path
-                        # valid_config.dataset_dir = new_weights_path
-                        # test_config.dataset_dir = new_weights_path
-
-                        self.train_loader = get_loader(self.hp, self.hp, shuffle=True, mode='train')
-                        self.dev_loader = get_loader(self.hp, self.hp, shuffle=False, mode='dev')
-                        self.test_loader = get_loader(self.hp, self.hp, shuffle=False, mode='test')
-
-                        print("Dataset reloaded successfully!")
-                        
                         print(f"Saved model at pre_trained_models/MM.pt!")
                         save_model(self.hp, model)
 

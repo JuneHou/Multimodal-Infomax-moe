@@ -112,7 +112,7 @@ def update_kl_weights(args, epoch, smooth_factor, datasets, new_weights_path):
         print(f"Merged {len(merged_df)} unimodal instances.")
 
         # **2. Load & Match Multimodal Results by `ids`**
-        multi_fold = f"/data/wang/junh/results/MMIM/multimodal/"
+        multi_fold = f"/data/wang/junh/results/MMIM/{args.out_folder}/"
         multimodal_file = os.path.join(multi_fold, f"{args.dataset}_text_audio_video_{args.n_class}_{dataset}_results.csv")
 
         multi_df = pd.read_csv(multimodal_file)
