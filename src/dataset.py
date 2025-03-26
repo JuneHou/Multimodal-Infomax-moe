@@ -1,13 +1,14 @@
 import os
 import sys
 from create_dataset import *
+#from create_pkl import *
 
 # Configuration class to hold directory paths
 class Config:
     def __init__(self, sdk_dir, dataset_dir):
         self.sdk_dir = '/data/wang/junh/githubs/CMU-MultimodalSDK'
         self.dataset_dir = '/data/wang/junh/githubs/Multimodal-Infomax/datasets/MOSEI'
-        self.n_class = 7
+        self.n_class = 1
 
 # Check if the necessary directories exist and create them if not
 def ensure_dir(directory):

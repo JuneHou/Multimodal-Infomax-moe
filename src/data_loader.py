@@ -9,29 +9,22 @@ from torch.nn.utils.rnn import pad_sequence, pack_padded_sequence, pad_packed_se
 from torch.utils.data import DataLoader, Dataset
 import transformers
 from transformers import BertTokenizer
+from utils.tools import load_pickle
 
 from create_dataset import MOSI, MOSEI, PAD, UNK
+from data_prepare import *
 
 bert_tokenizer = BertTokenizer.from_pretrained('bert-base-uncased', do_lower_case=True)
 
-class MSADataset(Dataset):
-    def __init__(self, config):
-        self.config = config
 
-        ## Fetch dataset
-        if "mosi" in str(config.data_dir).lower():
-            dataset = MOSI(config)
-        elif "mosei" in str(config.data_dir).lower():
-            dataset = MOSEI(config)
-        else:
-            print("Dataset not defined correctly")
-            exit()
-        
-        self.data, self.word2id, _ = dataset.get_data(config.mode)
+class MSADataset(Dataset):
+    def __init__(self, config, hp, mode):
+        self.config = config
+        # Fetch dataset using the new function
+        self.data, self.word2id, _ = load_dataset(config, hp, mode)
         self.len = len(self.data)
 
         config.word2id = self.word2id
-        # config.pretrained_emb = self.pretrained_emb
 
     @property
     def tva_dim(self):
@@ -45,21 +38,20 @@ class MSADataset(Dataset):
         return self.len
 
 
-def get_loader(hp, config, shuffle=True):
+def get_loader(hp, config, shuffle=True, mode=None):
     """Load DataLoader of given DialogDataset"""
 
-    dataset = MSADataset(config)
+    dataset = MSADataset(config, hp, mode)
     device=torch.device('cuda')
     
-    print(config.mode)
     config.data_len = len(dataset)
     config.tva_dim = dataset.tva_dim
     
-    if config.mode == 'train':
+    if mode == 'train':
         hp.n_train = len(dataset)
-    elif config.mode == 'valid':
+    elif mode == 'dev':
         hp.n_valid = len(dataset)
-    elif config.mode == 'test':
+    elif mode == 'test':
         hp.n_test = len(dataset)
 
     def collate_fn(batch):
@@ -73,6 +65,9 @@ def get_loader(hp, config, shuffle=True):
         a_lens = []
         labels = []
         ids = []
+        text_weights = []
+        visual_weights = []
+        acoustic_weights = []
 
         for sample in batch:
             if len(sample[0]) > 4: # unaligned case
@@ -88,6 +83,9 @@ def get_loader(hp, config, shuffle=True):
                 label = torch.from_numpy(sample[1])
             labels.append(label)
             ids.append(sample[2])
+            text_weights.append(sample[0][-3])
+            visual_weights.append(sample[0][-2])
+            acoustic_weights.append(sample[0][-1])
         vlens = torch.cat(v_lens)
         alens = torch.cat(a_lens)
         labels = torch.cat(labels, dim=0)
@@ -148,7 +146,7 @@ def get_loader(hp, config, shuffle=True):
         if (vlens <= 0).sum() > 0:
             vlens[np.where(vlens == 0)] = 1
 
-        return sentences, visual, vlens, acoustic, alens, labels, lengths, bert_sentences, bert_sentence_types, bert_sentence_att_mask, ids
+        return sentences, visual, vlens, acoustic, alens, labels, lengths, bert_sentences, bert_sentence_types, bert_sentence_att_mask, ids, text_weights, visual_weights, acoustic_weights
     generator = torch.Generator(device=device)
     data_loader = DataLoader(
         dataset=dataset,

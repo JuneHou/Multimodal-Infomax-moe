@@ -1,8 +1,10 @@
 import torch
 from torch import nn
 import sys
+import shutil
 import torch.optim as optim
 import numpy as np
+import pandas as pd
 import time
 import torch.nn.functional as F
 from torch.optim.lr_scheduler import ReduceLROnPlateau
@@ -13,6 +15,7 @@ from sklearn.metrics import precision_recall_fscore_support
 from sklearn.metrics import accuracy_score, f1_score
 from utils.eval_metrics import *
 from utils.tools import *
+from data_loader import get_loader
 from model_ import MMIM
 
 class Solver(object):
@@ -86,6 +89,11 @@ class Solver(object):
         #self.scheduler_mmilb = ReduceLROnPlateau(self.optimizer_mmilb, mode='min', patience=hp.when, factor=0.5, verbose=True)
         self.scheduler_main = ReduceLROnPlateau(self.optimizer_main, mode='min', patience=hp.when, factor=0.5, verbose=True)
 
+        output_fold = f"/data/wang/junh/results/MMIM/{self.hp.out_folder}"
+        if not os.path.exists(output_fold):
+            os.makedirs(output_fold) 
+        self.output_dir = f"{output_fold}/{self.hp.dataset}_{self.hp.modality}_{self.hp.n_class}"
+
     ####################################################################
     #
     # Training and evaluation scripts
@@ -93,7 +101,14 @@ class Solver(object):
     ####################################################################
 
     def train_and_eval(self):
-        log_file = f"/data/wang/junh/results/MMIM/{self.hp.dataset}_{self.hp.modality}_{self.hp.n_class}_{self.hp.lr_main}_{self.hp.d_vh}_{self.hp.d_vout}_best_performance.log"
+        log_file = f"{self.output_dir}_{self.hp.lr_main}_{self.hp.d_vh}_{self.hp.d_vout}_best_performance.log"
+        new_weights_path = os.path.join(self.hp.dataset_path, f'{self.hp.dataset.upper()}/new_weights/')
+        if os.path.exists(new_weights_path):
+            shutil.rmtree(new_weights_path)
+            print(f"Deleted previous weight folder: {new_weights_path}")
+        smooth_factor = 0.5
+        decay_rate = 0.1
+        
         model = self.model
         #optimizer_mmilb = self.optimizer_mmilb
         optimizer_main = self.optimizer_main
@@ -128,12 +143,12 @@ class Solver(object):
                 mem_neg_va = []
 
             for i_batch, batch_data in enumerate(self.train_loader):
-                text, visual, vlens, audio, alens, y, l, bert_sent, bert_sent_type, bert_sent_mask, ids = batch_data
+                text, visual, vlens, audio, alens, y, l, bert_sent, bert_sent_type, bert_sent_mask, ids, text_weights, visual_weights, acoustic_weights = batch_data
 
-                # for mosei we only use 50% dataset in stage 1
-                if self.hp.dataset == "mosei":
-                    if stage == 0 and i_batch / len(self.train_loader) >= 0.5:
-                        break
+                # # for mosei we only use 50% dataset in stage 1
+                # if self.hp.dataset == "mosei":
+                #     if stage == 0 and i_batch / len(self.train_loader) >= 0.5:
+                #         break
                 model.zero_grad()
 
                 with torch.cuda.device(0):
@@ -145,18 +160,18 @@ class Solver(object):
                 
                 batch_size = y.size(0)
 
-                if stage == 0:
-                    y = None
-                    mem = None
-                elif stage == 1 and i_batch >= mem_size:
-                    mem = {'tv':{'pos':mem_pos_tv, 'neg':mem_neg_tv},
-                            'ta':{'pos':mem_pos_ta, 'neg':mem_neg_ta},
-                            'va': {'pos':mem_pos_va, 'neg':mem_neg_va} if self.hp.add_va else None}
-                else:
-                    mem = {'tv': None, 'ta': None, 'va': None}
+                # if stage == 0:
+                #     y = None
+                #     mem = None
+                # elif stage == 1 and i_batch >= mem_size:
+                #     mem = {'tv':{'pos':mem_pos_tv, 'neg':mem_neg_tv},
+                #             'ta':{'pos':mem_pos_ta, 'neg':mem_neg_ta},
+                #             'va': {'pos':mem_pos_va, 'neg':mem_neg_va} if self.hp.add_va else None}
+                # else:
+                #     mem = {'tv': None, 'ta': None, 'va': None}
 
-                preds = model(text, visual, audio, vlens, alens, 
-                                                bert_sent, bert_sent_type, bert_sent_mask, y, mem)
+                preds = model(text, visual, audio, vlens, alens, bert_sent, bert_sent_type, bert_sent_mask, \
+                    text_weights, visual_weights, acoustic_weights, y)
 
                 if self.hp.n_class == 2:
                     preds = preds.squeeze()
@@ -192,33 +207,49 @@ class Solver(object):
 
             return epoch_loss / self.hp.n_train
 
-        def evaluate(model, criterion, test=False):
+        def evaluate(model, criterion, mode):
             model.eval()
-            loader = self.test_loader if test else self.dev_loader
+            if mode == 'val':
+                loader = self.dev_loader
+                test = False
+            elif mode == 'test':
+                loader = self.test_loader
+                test = True
+            elif mode == 'train':
+                loader = self.train_loader
+                test = False
+            #loader = self.test_loader if test else self.dev_loader
             total_loss = 0.0
             total_l1_loss = 0.0
         
             results = []
             truths = []
+            eval_ids = []
 
             with torch.no_grad():
                 for batch in loader:
-                    text, vision, vlens, audio, alens, y, lengths, bert_sent, bert_sent_type, bert_sent_mask, ids = batch
+                    text, vision, vlens, audio, alens, y, lengths, bert_sent, bert_sent_type, bert_sent_mask, \
+                        ids, text_weights, visual_weights, acoustic_weights = batch
 
                     with torch.cuda.device(0):
                         text, audio, vision, y = text.cuda(), audio.cuda(), vision.cuda(), y.cuda()
                         lengths = lengths.cuda()
                         bert_sent, bert_sent_type, bert_sent_mask = bert_sent.cuda(), bert_sent_type.cuda(), bert_sent_mask.cuda()
-                        if self.hp.dataset == 'iemocap':
-                            y = y.long()
+                        # if self.hp.dataset == 'iemocap':
+                        #     y = y.long()
                     
-                        if self.hp.dataset == 'ur_funny':
-                            y = y.squeeze()
+                        # if self.hp.dataset == 'ur_funny':
+                        #     y = y.squeeze()
 
                     batch_size = lengths.size(0) # bert_sent in size (bs, seq_len, emb_size)
 
                     # we don't need lld and bound anymore
-                    preds = model(text, vision, audio, vlens, alens, bert_sent, bert_sent_type, bert_sent_mask)
+                    preds = model(text, vision, audio, vlens, alens, bert_sent, bert_sent_type, bert_sent_mask, \
+                        text_weights, visual_weights, acoustic_weights)
+
+                    results.append(preds)  # Save continuous outputs
+                    truths.append(y)      # Save ground truth labels
+                    eval_ids.extend(ids)
 
                     if self.hp.n_class == 2:
                         preds = preds.squeeze()
@@ -237,21 +268,27 @@ class Solver(object):
 
                     total_loss += criterion(preds, y).item() * batch_size
 
-                    # Collect the results into ntest if test else self.hp.n_valid)
-                    results.append(preds)
-                    truths.append(y)
+                    # # Collect the results into ntest if test else self.hp.n_valid)
+                    # results.append(preds)
+                    # truths.append(y)
             
             avg_loss = total_loss / (self.hp.n_test if test else self.hp.n_valid)
 
             results = torch.cat(results)
             truths = torch.cat(truths)
-            return avg_loss, results, truths
+
+            return avg_loss, results, truths, eval_ids
 
         best_valid = 1e8
+        last_val_loss = float("inf")
         best_mae = 1e8
+        best_f1 = 0
         patience = self.hp.patience
 
         for epoch in range(1, self.hp.num_epochs+1):
+            with open(log_file, "a") as f:
+                f.write(f"\nEpoch: {epoch}\n")
+
             start = time.time()
 
             self.epoch = epoch
@@ -264,8 +301,9 @@ class Solver(object):
             # minimize all losses left
             train_loss = train(model, optimizer_main, criterion, 1)
 
-            val_loss, _, _ = evaluate(model, criterion, test=False)
-            test_loss, results, truths = evaluate(model, criterion, test=True)
+            val_loss, val_results, val_truths, val_ids = evaluate(model, criterion, 'val')
+            test_loss, results, truths, ids = evaluate(model, criterion, 'test')
+            _, train_results, train_truths, train_ids = evaluate(model, criterion, 'train')
             
             end = time.time()
             duration = end-start
@@ -276,10 +314,11 @@ class Solver(object):
             print('Epoch {:2d} | Time {:5.4f} sec | Valid Loss {:5.4f} | Test Loss {:5.4f}'.format(epoch, duration, val_loss, test_loss))
             print("-"*50)
             
-            if val_loss < best_valid:
+            if val_loss < best_valid or test_loss < best_mae:
                 # update best validation
-                patience = self.hp.patience
-                best_valid = val_loss
+                if val_loss < best_valid:
+                    patience = self.hp.patience
+                    best_valid = val_loss
                 # for ur_funny we don't care about
                 if self.hp.dataset == "ur_funny":
                     eval_humor(results, truths, True)
@@ -287,9 +326,9 @@ class Solver(object):
                     best_epoch = epoch
                     best_mae = test_loss
                     if self.hp.dataset in ["mosei_senti", "mosei"] and self.hp.n_class == 1:
-                        best_results_dict = eval_mosei_senti(results, truths, True)
+                        best_results_dict, all_f1 = eval_mosei_senti(results, truths, True, log_file)
                     elif self.hp.dataset == 'mosi' and self.hp.n_class == 1:
-                        best_results_dict = eval_mosi(results, truths, True)
+                        best_results_dict, all_f1 = eval_mosi(results, truths, True, log_file)
                     elif self.hp.dataset == 'iemocap':
                         best_results_dict = eval_iemocap(results, truths)
                     elif self.hp.dataset in ["mosi", "mosei_senti", "mosei"] and self.hp.n_class > 1:
@@ -297,70 +336,45 @@ class Solver(object):
                     
                     best_results = results
                     best_truths = truths
-                    #print(f"Saved model at pre_trained_models/MM.pt!")
-                    #save_model(self.hp, model)
-                    # **LOG BEST MODEL IMMEDIATELY**
-                    with open(log_file, "a") as f:
-                        f.write(f"\nEpoch: {epoch}\n")
+
+                    if all_f1 > best_f1:
+                        save_results(train_ids, train_results, train_truths, "train", self.output_dir)
+                        save_results(val_ids, val_results, val_truths, "dev", self.output_dir)
+                        save_results(ids, results, truths, "test", self.output_dir)
+
+                        ### Update KL divergence-based weights
+                        update_kl_weights(self.hp, epoch, smooth_factor, ['train', 'dev', 'test'], new_weights_path)
                         
-                        if best_results_dict:
-                            f.write("Best Model Performance:\n")
-                            for metric, value in best_results_dict.items():
-                                f.write(f"{metric}: {value:.4f}\n")
                         
-                        f.write("=" * 50 + "\n")
-            elif test_loss < best_mae:
-                patience = self.hp.patience
-                best_epoch = epoch
-                best_mae = test_loss
-                if self.hp.dataset in ["mosei_senti", "mosei"] and self.hp.n_class == 1:
-                    best_results_dict = eval_mosei_senti(results, truths, True)
-                elif self.hp.dataset == 'mosi' and self.hp.n_class == 1:
-                    best_results_dict = eval_mosi(results, truths, True)
-                elif self.hp.dataset == 'iemocap':
-                    best_results_dict = eval_iemocap(results, truths)
-                elif self.hp.dataset in ["mosi", "mosei_senti", "mosei"] and self.hp.n_class > 1:
-                    best_results_dict = eval_categorical_labels(results, truths, self.hp.n_class)
-                
-                best_results = results
-                best_truths = truths
-                #print(f"Saved model at pre_trained_models/MM.pt!")
-                #save_model(self.hp, model)
-                # **LOG BEST MODEL IMM
-                with open(log_file, "a") as f:
-                    f.write(f"\nEpoch: {epoch}\n")
-                    
-                    if best_results_dict:
-                        f.write("Best Model Performance:\n")
-                        for metric, value in best_results_dict.items():
-                            f.write(f"{metric}: {value:.4f}\n")
-                    
-                    f.write("=" * 50 + "\n")
+                        ### Update smooth factor
+                        f1_delta = all_f1 - best_f1
+                        best_f1 = all_f1
+                        if f1_delta > 0:
+                            smooth_factor = min(smooth_factor + decay_rate, 1)  # Cap at 1 to avoid overshooting
+                        else:
+                            smooth_factor = max(smooth_factor - decay_rate, 0)
+
+                        # **Reload Dataset with Updated Weights**
+                        print("Reloading dataset with updated weights...")
+                        
+                        # Update file paths to point to new_weights directory
+                        self.hp.dataset_path = new_weights_path  # Ensure the new path is used
+
+                        # # Reload dataset and dataloaders
+                        # train_config.dataset_dir = new_weights_path
+                        # valid_config.dataset_dir = new_weights_path
+                        # test_config.dataset_dir = new_weights_path
+
+                        self.train_loader = get_loader(self.hp, self.hp, shuffle=True, mode='train')
+                        self.dev_loader = get_loader(self.hp, self.hp, shuffle=False, mode='dev')
+                        self.test_loader = get_loader(self.hp, self.hp, shuffle=False, mode='test')
+
+                        print("Dataset reloaded successfully!")
+                        
+                        print(f"Saved model at pre_trained_models/MM.pt!")
+                        save_model(self.hp, model)
+
             else:
                 patience -= 1
                 if patience == 0:
                     break
-
-        # # Save the best epoch and results to a file
-        # with open(log_file, "a") as f:  # "a" for append mode, so it doesn't overwrite previous logs
-        #     f.write(f"\nBest epoch: {best_epoch}\n")
-
-        #     if self.hp.dataset in ["mosei_senti", "mosei"]:
-        #         best_results_str = eval_mosei_senti(best_results, best_truths, True)
-        #         f.write(f"Best MOSI/MOSEI Sentiment Results: {best_results_str}\n")
-            
-        #     elif self.hp.dataset == "mosi":
-        #         self.best_dict = eval_mosi(best_results, best_truths, True)
-        #         f.write(f"Best MOSI Results: {self.best_dict}\n")
-
-        #     f.write("=" * 50 + "\n")
-        # f.close()
-
-        # print(f'Best epoch: {best_epoch}')
-        # if self.hp.dataset in ["mosei_senti", "mosei"]:
-        #     eval_mosei_senti(best_results, best_truths, True)
-        # elif self.hp.dataset == 'mosi':
-        #     self.best_dict = eval_mosi(best_results, best_truths, True)
-        # elif self.hp.dataset == 'iemocap':
-        #     eval_iemocap(results, truths)       
-        # sys.stdout.flush()

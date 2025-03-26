@@ -31,11 +31,11 @@ if __name__ == '__main__':
     test_config = get_config(args.n_class, dataset, mode='test',  batch_size=args.batch_size)
 
     # pretrained_emb saved in train_config here
-    train_loader = get_loader(args, train_config, shuffle=True)
+    train_loader = get_loader(args, train_config, shuffle=True, mode='train')
     print('Training data loaded!')
-    valid_loader = get_loader(args, valid_config, shuffle=False)
+    valid_loader = get_loader(args, valid_config, shuffle=False, mode='dev')
     print('Validation data loaded!')
-    test_loader = get_loader(args, test_config, shuffle=False)
+    test_loader = get_loader(args, test_config, shuffle=False, mode='test')
     print('Test data loaded!')
     print('Finish loading the data....')
 

@@ -38,6 +38,11 @@ criterion_dict = {
 def get_args():
     parser = argparse.ArgumentParser(description='MOSI-and-MOSEI Sentiment Analysis')
     parser.add_argument('-f', default='', type=str)
+    # Datasets
+    sdk_path = '/data/wang/junh/githubs/CMU-MultimodalSDK'
+    dataset_path = '/data/wang/junh/githubs/Multimodal-Infomax/datasets/'
+    parser.add_argument('--sdk_path', type=str, default=sdk_path)
+    parser.add_argument('--dataset_path', type=str, default=dataset_path)
 
     # Tasks
     parser.add_argument('--dataset', type=str, default='mosi', choices=['mosi','mosei'],
@@ -139,6 +144,8 @@ def get_args():
                         help='random seed')
     parser.add_argument('--device', type=int, default=0,
                         help='GPU device')
+    parser.add_argument('--out_folder', type=str, default='logs',
+                        help='output folder')
     args = parser.parse_args()
     return args
 

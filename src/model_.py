@@ -139,7 +139,8 @@ class MMIM(nn.Module):
 
         
             
-    def forward(self, sentences, visual, acoustic, v_len, a_len, bert_sent, bert_sent_type, bert_sent_mask, y=None, mem=None):
+    def forward(self, sentences, visual, acoustic, v_len, a_len, bert_sent, bert_sent_type, bert_sent_mask, \
+        text_weights, visual_weights, acoustic_weights, y=None):
         """
         text, audio, and vision should have dimension [batch_size, seq_len, n_features]
         For Bert input, the length of text is "seq_len + 2"
@@ -147,16 +148,19 @@ class MMIM(nn.Module):
         if 'text' in self.hp.modality:
             enc_word = self.text_enc(sentences, bert_sent, bert_sent_type, bert_sent_mask) # (batch_size, seq_len, emb_size)
             text = enc_word[:,0,:] # (batch_size, emb_size)
+            #text = text * text_weights
             # torch.Size([32, 768])
         else :
             text = None
         if 'audio' in self.hp.modality:
             acoustic = self.acoustic_enc(acoustic, a_len)
+            #acoustic = acoustic * acoustic_weights
             # torch.Size([32, 16])
         else :
             acoustic = None
         if 'video' in self.hp.modality:
             visual = self.visual_enc(visual, v_len)
+            #visual = visual * visual_weights
             # torch.Size([261, 32, 20]) to torch.Size([32, 16]) 
         else :
             visual = None
