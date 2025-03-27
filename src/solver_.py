@@ -102,12 +102,13 @@ class Solver(object):
 
     def train_and_eval(self):
         log_file = f"{self.output_dir}_{self.hp.lr_main}_{self.hp.d_vh}_{self.hp.d_vout}_best_performance.log"
-        new_weights_path = os.path.join(self.hp.dataset_path, f'{self.hp.dataset.upper()}/new_weights/')
-        if os.path.exists(new_weights_path):
-            shutil.rmtree(new_weights_path)
-            print(f"Deleted previous weight folder: {new_weights_path}")
-        smooth_factor = 0.5
-        decay_rate = 0.05
+        if self.hp.num_modality > 1:
+            new_weights_path = os.path.join(self.hp.dataset_path, f'{self.hp.dataset.upper()}/new_weights/')
+            if os.path.exists(new_weights_path):
+                shutil.rmtree(new_weights_path)
+                print(f"Deleted previous weight folder: {new_weights_path}")
+            smooth_factor = 0.5
+            decay_rate = 0.05
         
         model = self.model
         #optimizer_mmilb = self.optimizer_mmilb
@@ -341,30 +342,31 @@ class Solver(object):
                     save_results(val_ids, val_results, val_truths, "dev", self.output_dir)
                     save_results(ids, results, truths, "test", self.output_dir)
 
-                    ### Update KL divergence-based weights
-                    update_kl_weights(self.hp, epoch, smooth_factor, ['train', 'dev', 'test'], new_weights_path)
-                    
-                    
-                    ### Update smooth factor
-                    f1_delta = all_f1 - best_f1
-                    best_f1 = all_f1
-                    if f1_delta > 0:
-                        smooth_factor = min(smooth_factor + decay_rate, 1)  # Cap at 1 to avoid overshooting
-                    else:
-                        smooth_factor = max(smooth_factor - decay_rate, 0)
-                    print("New smooth factor: ", smooth_factor)
+                    if self.hp.num_modality > 1:
+                        ### Update KL divergence-based weights
+                        update_kl_weights(self.hp, epoch, smooth_factor, ['train', 'dev', 'test'], new_weights_path)
+                        
+                        
+                        ### Update smooth factor
+                        f1_delta = all_f1 - best_f1
+                        best_f1 = all_f1
+                        if f1_delta > 0:
+                            smooth_factor = min(smooth_factor + decay_rate, 1)  # Cap at 1 to avoid overshooting
+                        else:
+                            smooth_factor = max(smooth_factor - decay_rate, 0)
+                        print("New smooth factor: ", smooth_factor)
 
-                    # **Reload Dataset with Updated Weights**
-                    print("Reloading dataset with updated weights...")
-                    
-                    # Update file paths to point to new_weights directory
-                    self.hp.dataset_path = new_weights_path  # Ensure the new path is used
+                        # **Reload Dataset with Updated Weights**
+                        print("Reloading dataset with updated weights...")
+                        
+                        # Update file paths to point to new_weights directory
+                        self.hp.dataset_path = new_weights_path  # Ensure the new path is used
 
-                    self.train_loader = get_loader(self.hp, self.hp, shuffle=True, mode='train')
-                    self.dev_loader = get_loader(self.hp, self.hp, shuffle=False, mode='dev')
-                    self.test_loader = get_loader(self.hp, self.hp, shuffle=False, mode='test')
+                        self.train_loader = get_loader(self.hp, self.hp, shuffle=True, mode='train')
+                        self.dev_loader = get_loader(self.hp, self.hp, shuffle=False, mode='dev')
+                        self.test_loader = get_loader(self.hp, self.hp, shuffle=False, mode='test')
 
-                    print("Dataset reloaded successfully!")
+                        print("Dataset reloaded successfully!")
 
                     if all_f1 > best_f1:
                         print(f"Saved model at pre_trained_models/MM.pt!")
