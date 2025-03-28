@@ -8,6 +8,8 @@ from ast import literal_eval  # For parsing list-like strings
 from scipy.stats import entropy
 import pickle
 
+from utils.SAC import *
+
 
 def save_load_name(args, name=''):
     if args.aligned:
@@ -67,11 +69,31 @@ def save_results(eval_ids, results, truths, mode, output_dir):
     results_df.to_csv(output_file, index=False)
     print(f"Saved {mode} predictions to {output_file}")
 
+
 def kl_divergence_gaussian(mean_p, mean_q, sigma=0.1):
     """
     Computes KL divergence between two Gaussian distributions N(mean_p, sigma^2) and N(mean_q, sigma^2).
     """
     kl = np.log(sigma / sigma) + (sigma**2 + (mean_p - mean_q)**2) / (2 * sigma**2) - 0.5
+    return kl
+
+def kl_divergence_SAC(mean_p, mean_q, log_sigma_p, log_sigma_q):
+    """
+    Computes KL divergence between two Gaussian distributions with learnable variance.
+
+    Args:
+        mean_p (float): Mean of unimodal prediction.
+        mean_q (float): Mean of multimodal prediction.
+        log_sigma_p (float): Log variance of unimodal prediction (learnable).
+        log_sigma_q (float): Log variance of multimodal prediction (learnable).
+
+    Returns:
+        float: KL divergence.
+    """
+    sigma_p = np.exp(log_sigma_p)  # Ensure sigma is positive
+    sigma_q = np.exp(log_sigma_q)
+
+    kl = np.log(sigma_q / sigma_p) + (sigma_p**2 + (mean_p - mean_q)**2) / (2 * sigma_q**2) - 0.5
     return kl
 
 def update_kl_weights(args, epoch, smooth_factor, datasets, new_weights_path):
@@ -124,21 +146,37 @@ def update_kl_weights(args, epoch, smooth_factor, datasets, new_weights_path):
         matched_instances = len(merged_df)
         print(f"Matched {matched_instances} instances between unimodal and multimodal.")
 
-        # **3. Compute KL-Divergence Weights (Gaussian Approximation)**
-        sigma = 0.1  # Small variance to define Gaussians
-        for modality in modalities:
-            merged_df[f'kl_{modality}'] = merged_df.apply(
-                lambda row: kl_divergence_gaussian(row[modality], row['Multi'], sigma), axis=1
-            )
+        # **3. Train Variance Estimator (Every Time We Update KL Weights)**
+        device = torch.device("cuda")
+        dataset_torch = torch.utils.data.TensorDataset(
+            torch.tensor(merged_df['Multi'].values, dtype=torch.float32, device=device).unsqueeze(1)
+        )
 
-        # Normalize KL scores across instances
-        for modality in modalities:
-            max_kl = merged_df[f'kl_{modality}'].max()
-            min_kl = merged_df[f'kl_{modality}'].min()
-            if max_kl - min_kl > 0:
-                merged_df[f'kl_{modality}'] = (merged_df[f'kl_{modality}'] - min_kl) / (max_kl - min_kl)
-            else:
-                merged_df[f'kl_{modality}'] = 0.001  # Prevent zero division
+        # **Ensure DataLoader uses the same device as model**
+        data_loader = torch.utils.data.DataLoader(
+            dataset_torch, batch_size=32, shuffle=True, generator=torch.Generator(device=device)
+        )
+
+        variance_model = VarianceEstimator().to(device)
+        if os.path.exists(f"{args.dataset}_variance_estimator.pth"):
+            variance_model.load_state_dict(torch.load(f"{args.dataset}_variance_estimator.pth", map_location=device))
+
+        variance_model = train_variance_estimator(variance_model, data_loader, device=device)
+        torch.save(variance_model.state_dict(), f"{args.dataset}_variance_estimator.pth")
+        print("[Variance Estimator] Model saved after training.")
+
+        # **3. Compute KL-Divergence Weights Using Multimodal Variance**
+        variance_model.eval()
+        y_multi = torch.tensor(multi_df['Multi'].values).float().unsqueeze(1).to(device)
+        log_sigma_q = variance_model(y_multi).cpu().detach().numpy().flatten()
+
+        # **Compute KL divergence with learned variance**
+        for modality in ['text', 'audio', 'video']:
+            merged_df[f'kl_{modality}'] = merged_df.apply(
+                lambda row, lq: kl_divergence_SAC(row[modality], row['Multi'], np.log(0.1), lq),
+                axis=1,
+                args=(log_sigma_q,)
+            )
 
         # **4. Update Weights in Pickle File (Moving Average)**
         if "new_weights" in args.dataset_path:
