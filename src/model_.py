@@ -65,32 +65,35 @@ class MultiModalEncoder(nn.Module):
 
         self.to(device)
 
-    def forward(self, text, visual, acoustic):
+    def forward(self, text, visual, acoustic, text_weights, visual_weights, acoustic_weights):
         # Assume inputs are already in the appropriate device and reshaped as needed
         combined = []
         modality = []
         if text is not None:
             text = self.text_proj(text)
+            text = text * text_weights.view(-1, 1)
             combined.append(text)
             modality.append('text')
         if visual is not None:
             visual = self.visual_proj(visual)
+            visual = visual * visual_weights.view(-1, 1)
             combined.append(visual)
             modality.append('visual')
         if acoustic is not None:
             acoustic = self.acoustic_proj(acoustic)
+            acoustic = acoustic * acoustic_weights.view(-1, 1)
             combined.append(acoustic)
             modality.append('acoustic')
         # combined = torch.stack([text, visual, acoustic], dim=1)  # (batch, 3, 128)
         fused_output, _ = self.fusion_transformer(combined, modality)  # Back to (batch, 3, 128)
-        fused_output = torch.cat(fused_output, dim=1)
+        cat_hidden = torch.cat(fused_output, dim=1)
 
-        _, fused_output = self.fusion_prj(fused_output) # logits is for categorical labels
+        _, fused_output = self.fusion_prj(cat_hidden) # logits is for categorical labels
         if self.hp.n_class == 2:
             fused_output = torch.sigmoid(fused_output)
         elif self.hp.n_class > 2:
             fused_output = torch.softmax(fused_output, dim=-1)
-        return fused_output
+        return fused_output, cat_hidden
 
 
 class MMIM(nn.Module):
@@ -148,22 +151,25 @@ class MMIM(nn.Module):
         if 'text' in self.hp.modality:
             enc_word = self.text_enc(sentences, bert_sent, bert_sent_type, bert_sent_mask) # (batch_size, seq_len, emb_size)
             text = enc_word[:,0,:] # (batch_size, emb_size)
-            #text = text * text_weights
+            text_weights = torch.tensor(text_weights, dtype=torch.float32, device=text.device)
+            # text = text * text_weights.view(-1, 1)
             # torch.Size([32, 768])
         else :
             text = None
         if 'audio' in self.hp.modality:
             acoustic = self.acoustic_enc(acoustic, a_len)
-            #acoustic = acoustic * acoustic_weights
+            acoustic_weights = torch.tensor(acoustic_weights, dtype=torch.float32, device=acoustic.device)
+            # acoustic = acoustic * acoustic_weights.view(-1, 1)
             # torch.Size([32, 16])
         else :
             acoustic = None
         if 'video' in self.hp.modality:
             visual = self.visual_enc(visual, v_len)
-            #visual = visual * visual_weights
+            visual_weights = torch.tensor(visual_weights, dtype=torch.float32, device=visual.device)
+            # visual = visual * visual_weights.view(-1, 1)
             # torch.Size([261, 32, 20]) to torch.Size([32, 16]) 
         else :
             visual = None
-        fused_output = self.multi_modal_encoder(text, visual, acoustic) 
+        fused_output, cat_hidden = self.multi_modal_encoder(text, visual, acoustic, text_weights, visual_weights, acoustic_weights) 
 
-        return fused_output
+        return fused_output, cat_hidden

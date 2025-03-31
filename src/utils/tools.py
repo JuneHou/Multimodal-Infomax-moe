@@ -6,6 +6,9 @@ import pandas as pd
 import numpy as np
 from ast import literal_eval  # For parsing list-like strings
 from scipy.stats import entropy
+from scipy.stats import pearsonr
+from sklearn.feature_selection import mutual_info_regression
+
 import pickle
 
 from utils.SAC import *
@@ -96,6 +99,52 @@ def kl_divergence_SAC(mean_p, mean_q, log_sigma_p, log_sigma_q):
     kl = np.log(sigma_q / sigma_p) + (sigma_p**2 + (mean_p - mean_q)**2) / (2 * sigma_q**2) - 0.5
     return kl
 
+def compute_cc_weights(unimodal_preds, multimodal_preds):
+    """
+    Computes Pearson correlation coefficient between unimodal and multimodal predictions.
+
+    Args:
+        unimodal_preds (dict): Dictionary of unimodal predictions {modality: np.array of predictions}.
+        multimodal_preds (np.array): Multimodal predictions.
+
+    Returns:
+        dict: Correlation weights for each modality.
+    """
+    correlation_weights = {}
+    for modality, preds in unimodal_preds.items():
+        correlation, _ = pearsonr(preds, multimodal_preds)
+        correlation_weights[modality] = correlation if not np.isnan(correlation) else 0  # Handle NaN cases
+
+    # # Normalize weights
+    # max_corr = max(correlation_weights.values())
+    # for modality in correlation_weights:
+    #     correlation_weights[modality] /= max_corr
+
+    return correlation_weights
+
+def compute_mi_weights(unimodal_preds, multimodal_preds):
+    """
+    Computes Mutual Information between unimodal and multimodal predictions.
+
+    Args:
+        unimodal_preds (dict): Dictionary of unimodal predictions {modality: np.array of predictions}.
+        multimodal_preds (np.array): Multimodal predictions.
+
+    Returns:
+        dict: Mutual information weights for each modality.
+    """
+    mi_weights = {}
+    for modality, preds in unimodal_preds.items():
+        mi_score = mutual_info_regression(preds.reshape(-1, 1), multimodal_preds)
+        mi_weights[modality] = mi_score[0] if mi_score[0] > 0 else 0  # Ensure non-negative
+
+    # # Normalize weights
+    # max_mi = max(mi_weights.values())
+    # for modality in mi_weights:
+    #     mi_weights[modality] /= max_mi
+
+    return mi_weights
+
 def update_kl_weights(args, epoch, smooth_factor, datasets, new_weights_path):
     """
     Updates KL divergence-based modality weights and saves new `.pkl` files.
@@ -158,8 +207,6 @@ def update_kl_weights(args, epoch, smooth_factor, datasets, new_weights_path):
         )
 
         variance_model = VarianceEstimator().to(device)
-        if os.path.exists(f"{args.dataset}_variance_estimator.pth"):
-            variance_model.load_state_dict(torch.load(f"{args.dataset}_variance_estimator.pth", map_location=device))
 
         variance_model = train_variance_estimator(variance_model, data_loader, device=device)
         torch.save(variance_model.state_dict(), f"{args.dataset}_variance_estimator.pth")
@@ -173,10 +220,49 @@ def update_kl_weights(args, epoch, smooth_factor, datasets, new_weights_path):
         # **Compute KL divergence with learned variance**
         for modality in ['text', 'audio', 'video']:
             merged_df[f'kl_{modality}'] = merged_df.apply(
-                lambda row, lq: kl_divergence_SAC(row[modality], row['Multi'], np.log(0.1), lq),
-                axis=1,
-                args=(log_sigma_q,)
+                lambda row: max(0.00001, float(kl_divergence_SAC(row[modality], row['Multi'], np.log(0.1), log_sigma_q[row.name]))),
+                axis=1
             )
+        
+        for modality in modalities:
+            # Min-Max Normalization
+            min_kl = merged_df[f'kl_{modality}'].min()
+            max_kl = merged_df[f'kl_{modality}'].max()
+            
+            if max_kl - min_kl > 0:  # Avoid division by zero
+                merged_df[f'kl_{modality}'] = (merged_df[f'kl_{modality}'] - min_kl) / (max_kl - min_kl)
+            else:
+                merged_df[f'kl_{modality}'] = 0.0001 
+            
+        ##############################################################
+        # **Compute Correlation Coefficient**
+        unimodal_preds = {modality: merged_df[modality].values for modality in modalities}
+        multimodal_preds = merged_df['Multi'].values
+
+        cc_weights = compute_cc_weights(unimodal_preds, multimodal_preds)
+        cc_weights = {modality: max(0.00001, cc_weights[modality]) for modality in modalities}
+        print(f"Correlation Coefficients: {cc_weights}")
+        merged_df["cc_text"] = cc_weights["text"]
+        merged_df["cc_audio"] = cc_weights["audio"]
+        merged_df["cc_video"] = cc_weights["video"]
+        mi_weights = compute_mi_weights(unimodal_preds, multimodal_preds)
+        mi_weights = {modality: max(0.00001, mi_weights[modality]) for modality in modalities}
+        merged_df["mi_text"] = mi_weights["text"]
+        merged_df["mi_audio"] = mi_weights["audio"]
+        merged_df["mi_video"] = mi_weights["video"]
+        print(f"Mutual Information Weights: {mi_weights}")
+
+        for modality in modalities:
+            # Multiply KL weights by correlation coefficient weights
+            #############################################################
+            merged_df[f'final_weight_{modality}'] = merged_df[f'kl_{modality}'] * cc_weights[modality]
+            # merged_df[f'final_weight_{modality}'] = merged_df[f'kl_{modality}'] * mi_weights[modality]
+        
+        # **LOG ALL WEIGHTS**
+        log_path = os.path.join(f"/data/wang/junh/results/MMIM/{args.out_folder}/", f"{args.dataset}_weights_log_epoch{epoch}.csv")
+
+        # Save to file
+        merged_df.to_csv(log_path, index=False)
 
         # **4. Update Weights in Pickle File (Moving Average)**
         if "new_weights" in args.dataset_path:
@@ -203,7 +289,11 @@ def update_kl_weights(args, epoch, smooth_factor, datasets, new_weights_path):
 
                 # Compute new weights using a moving average
                 for j, modality in enumerate(modalities):
-                    weight_list[-3 + j] = (smooth_factor * matching_row[f'kl_{modality}']) + (1 - smooth_factor) * weight_list[-3 + j]
+                    ###############################################################
+                    weight_list[-3 + j] = (smooth_factor * matching_row[f'final_weight_{modality}']) + (1 - smooth_factor) * weight_list[-3 + j]
+                    # weight_list[-3 + j] = matching_row[f'final_weight_{modality}']
+                    # weight_list[-3 + j] = (smooth_factor * matching_row[f'kl_{modality}']) + (1 - smooth_factor) * weight_list[-3 + j]
+                    # weight_list[-3 + j] = matching_row[f'kl_{modality}']
 
                 # Convert updated weights back to a tuple
                 stay_list[-3] = tuple(weight_list)
