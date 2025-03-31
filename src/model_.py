@@ -86,14 +86,14 @@ class MultiModalEncoder(nn.Module):
             modality.append('acoustic')
         # combined = torch.stack([text, visual, acoustic], dim=1)  # (batch, 3, 128)
         fused_output, _ = self.fusion_transformer(combined, modality)  # Back to (batch, 3, 128)
-        cat_hidden = torch.cat(fused_output, dim=1)
+        fused_output = torch.cat(fused_output, dim=1)
 
-        _, fused_output = self.fusion_prj(cat_hidden) # logits is for categorical labels
+        _, fused_output = self.fusion_prj(fused_output) # logits is for categorical labels
         if self.hp.n_class == 2:
             fused_output = torch.sigmoid(fused_output)
         elif self.hp.n_class > 2:
             fused_output = torch.softmax(fused_output, dim=-1)
-        return fused_output, cat_hidden
+        return fused_output
 
 
 class MMIM(nn.Module):
@@ -170,6 +170,6 @@ class MMIM(nn.Module):
             # torch.Size([261, 32, 20]) to torch.Size([32, 16]) 
         else :
             visual = None
-        fused_output, cat_hidden = self.multi_modal_encoder(text, visual, acoustic, text_weights, visual_weights, acoustic_weights) 
+        fused_output = self.multi_modal_encoder(text, visual, acoustic, text_weights, visual_weights, acoustic_weights) 
 
-        return fused_output, cat_hidden
+        return fused_output
