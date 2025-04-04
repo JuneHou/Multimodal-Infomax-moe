@@ -147,7 +147,7 @@ def compute_mi_weights(unimodal_preds, multimodal_preds):
 
     return mi_weights
 
-def update_kl_weights(args, epoch, smooth_factor, datasets, new_weights_path):
+def update_kl_weights(args, variance_model, epoch, smooth_factor, datasets, new_weights_path):
     """
     Updates KL divergence-based modality weights and saves new `.pkl` files.
     
@@ -214,10 +214,10 @@ def update_kl_weights(args, epoch, smooth_factor, datasets, new_weights_path):
         )
 
         # Initialize variance estimator
-        variance_model = VarianceEstimator(input_dim).to(device)
+        # variance_model = VarianceEstimator(input_dim).to(device)
 
         # Train variance estimator
-        variance_model = train_variance_estimator(variance_model, data_loader, device=device)
+        train_variance_estimator(variance_model, data_loader, device=device)
 
         # **4. Compute KL-Divergence Weights Using Multimodal Variance**
         variance_model.eval()

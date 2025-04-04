@@ -20,6 +20,8 @@ class VarianceEstimator(nn.Module):
         log_sigma = self.fc3(x)  # Output log variance
         return log_sigma
 
+        
+
 def train_variance_estimator(model, data_loader, device, epochs=10, lr=0.001):
     """
     Trains the variance estimator on multimodal predictions.
@@ -34,7 +36,7 @@ def train_variance_estimator(model, data_loader, device, epochs=10, lr=0.001):
     Returns:
         VarianceEstimator: Trained model.
     """
-    model = model.to(device)
+    # model = model.to(device)
     model.train()
 
     optimizer = optim.Adam(model.parameters(), lr=lr)
@@ -52,4 +54,4 @@ def train_variance_estimator(model, data_loader, device, epochs=10, lr=0.001):
 
         print(f"[Variance Estimator] Epoch {epoch+1}/{epochs}, Loss: {loss.item()}")
 
-    return model
+    print("Variance Estimator training complete.")

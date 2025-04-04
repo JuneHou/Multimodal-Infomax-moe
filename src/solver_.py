@@ -290,6 +290,9 @@ class Solver(object):
         best_f1 = 0
         patience = self.hp.patience
 
+        # init variance estimator
+        variance_estimator = VarianceEstimator(3*128).to(torch.device("cuda"))
+
         for epoch in range(1, self.hp.num_epochs+1):
             with open(log_file, "a") as f:
                 f.write(f"\nEpoch: {epoch}\n")
@@ -321,7 +324,7 @@ class Solver(object):
 
             if epoch % 5 == 0 and self.hp.num_modality > 1:
                 ### Update KL divergence-based weights
-                update_kl_weights(self.hp, epoch, smooth_factor, ['train', 'dev', 'test'], new_weights_path)
+                update_kl_weights(self.hp, variance_estimator, epoch, smooth_factor, ['train', 'dev', 'test'], new_weights_path)
                                         
                 # ## Update smooth factor
                 # f1_delta = all_f1 - best_f1
