@@ -8,6 +8,7 @@ from ast import literal_eval  # For parsing list-like strings
 from scipy.stats import entropy
 from scipy.stats import pearsonr
 from sklearn.feature_selection import mutual_info_regression
+import ast
 
 import pickle
 
@@ -61,12 +62,13 @@ def load_pickle(path):
     with open(path, 'rb') as f:
         return pickle.load(f)
 
-def save_results(eval_ids, results, truths, mode, output_dir):
+def save_results(eval_ids, results, truths, hiddens, mode, output_dir):
     # Save predictions
     results_df = pd.DataFrame({
         "ids": eval_ids,
         "Predicted": [list(row.cpu().detach().numpy()) for row in results],  # Continuous outputs before L1 loss
-        "Ground_Truth": [list(row.cpu().detach().numpy()) for row in truths]
+        "Ground_Truth": [list(row.cpu().detach().numpy()) for row in truths],
+        "hidden": [list(row.cpu().detach().numpy()) for row in hiddens]
     })
     output_file = f"{output_dir}_{mode}_results.csv"
     results_df.to_csv(output_file, index=False)
@@ -188,34 +190,38 @@ def update_kl_weights(args, epoch, smooth_factor, datasets, new_weights_path):
 
         multi_df = pd.read_csv(multimodal_file)
         multi_df['Predicted'] = multi_df['Predicted'].apply(lambda x: literal_eval(x)[0] if isinstance(x, str) else x)
-        multi_df = multi_df[['ids', 'Predicted']].rename(columns={'Predicted': 'Multi'})
+        multi_df['hidden'] = multi_df['hidden'].apply(lambda x: ast.literal_eval(x) if isinstance(x, str) else x)
+        new_multi = multi_df[['ids', 'Predicted']].rename(columns={'Predicted': 'Multi'})
 
-        merged_df = merged_df.merge(multi_df, on="ids", how="inner")
+        merged_df = merged_df.merge(new_multi, on="ids", how="inner")
+        merged_df = merged_df.merge(multi_df[['ids', 'hidden']], on="ids", how="left")
 
         matched_instances = len(merged_df)
         print(f"Matched {matched_instances} instances between unimodal and multimodal.")
 
         # **3. Train Variance Estimator (Every Time We Update KL Weights)**
         device = torch.device("cuda")
-        dataset_torch = torch.utils.data.TensorDataset(
-            torch.tensor(merged_df['Multi'].values, dtype=torch.float32, device=device).unsqueeze(1)
-        )
+        hidden_values = np.stack(merged_df['hidden'].values)
+        input_dim = hidden_values.shape[1]
+        hidden_tensor = torch.tensor(hidden_values, dtype=torch.float32, device="cuda")
 
-        # **Ensure DataLoader uses the same device as model**
+        # Convert multimodal hidden representations into a dataset
+        dataset_torch = torch.utils.data.TensorDataset(hidden_tensor)
+
+        # Ensure DataLoader uses the same device as model
         data_loader = torch.utils.data.DataLoader(
             dataset_torch, batch_size=32, shuffle=True, generator=torch.Generator(device=device)
         )
 
-        variance_model = VarianceEstimator().to(device)
+        # Initialize variance estimator
+        variance_model = VarianceEstimator(input_dim).to(device)
 
+        # Train variance estimator
         variance_model = train_variance_estimator(variance_model, data_loader, device=device)
-        torch.save(variance_model.state_dict(), f"{args.dataset}_variance_estimator.pth")
-        print("[Variance Estimator] Model saved after training.")
 
-        # **3. Compute KL-Divergence Weights Using Multimodal Variance**
+        # **4. Compute KL-Divergence Weights Using Multimodal Variance**
         variance_model.eval()
-        y_multi = torch.tensor(multi_df['Multi'].values).float().unsqueeze(1).to(device)
-        log_sigma_q = variance_model(y_multi).cpu().detach().numpy().flatten()
+        log_sigma_q = variance_model(hidden_tensor).cpu().detach().numpy().flatten()
 
         # **Compute KL divergence with learned variance**
         for modality in ['text', 'audio', 'video']:
@@ -255,8 +261,8 @@ def update_kl_weights(args, epoch, smooth_factor, datasets, new_weights_path):
         for modality in modalities:
             # Multiply KL weights by correlation coefficient weights
             #############################################################
-            merged_df[f'final_weight_{modality}'] = merged_df[f'kl_{modality}'] * cc_weights[modality]
-            # merged_df[f'final_weight_{modality}'] = merged_df[f'kl_{modality}'] * mi_weights[modality]
+            # merged_df[f'final_weight_{modality}'] = merged_df[f'kl_{modality}'] * cc_weights[modality]
+            merged_df[f'final_weight_{modality}'] = merged_df[f'kl_{modality}'] * mi_weights[modality]
         
         # **LOG ALL WEIGHTS**
         log_path = os.path.join(f"/data/wang/junh/results/MMIM/{args.out_folder}/", f"{args.dataset}_weights_log_epoch{epoch}.csv")
