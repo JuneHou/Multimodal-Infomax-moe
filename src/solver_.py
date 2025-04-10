@@ -319,37 +319,37 @@ class Solver(object):
             print('Epoch {:2d} | Time {:5.4f} sec | Valid Loss {:5.4f} | Test Loss {:5.4f}'.format(epoch, duration, val_loss, test_loss))
             print("-"*50)
 
-            if epoch % 5 == 0 and self.hp.num_modality > 1:
-                ### Update KL divergence-based weights
-                update_kl_weights(self.hp, epoch, smooth_factor, ['train', 'dev', 'test'], new_weights_path)
+            # if epoch % 5 == 0 and self.hp.num_modality > 1:
+            #     ### Update KL divergence-based weights
+            #     update_kl_weights(self.hp, epoch, smooth_factor, ['train', 'dev', 'test'], new_weights_path)
                                         
-                # ## Update smooth factor
-                # f1_delta = all_f1 - best_f1
-                # best_f1 = all_f1
-                # if f1_delta > 0:
-                #     smooth_factor = min(smooth_factor + decay_rate, 1)  # Cap at 1 to avoid overshooting
-                # else:
-                #     smooth_factor = max(smooth_factor - decay_rate, 0)
-                # print("New smooth factor: ", smooth_factor)
+            #     # ## Update smooth factor
+            #     # f1_delta = all_f1 - best_f1
+            #     # best_f1 = all_f1
+            #     # if f1_delta > 0:
+            #     #     smooth_factor = min(smooth_factor + decay_rate, 1)  # Cap at 1 to avoid overshooting
+            #     # else:
+            #     #     smooth_factor = max(smooth_factor - decay_rate, 0)
+            #     # print("New smooth factor: ", smooth_factor)
 
-                loss_delta = test_loss - best_mae
-                if loss_delta > 0:
-                    smooth_factor = min(smooth_factor + decay_rate, 1)
-                else:
-                    smooth_factor = max(smooth_factor - decay_rate, 0)
-                print("New smooth factor: ", smooth_factor)
+            #     loss_delta = test_loss - best_mae
+            #     if loss_delta > 0:
+            #         smooth_factor = min(smooth_factor + decay_rate, 1)
+            #     else:
+            #         smooth_factor = max(smooth_factor - decay_rate, 0)
+            #     print("New smooth factor: ", smooth_factor)
 
-                # **Reload Dataset with Updated Weights**
-                print("Reloading dataset with updated weights...")
+            #     # **Reload Dataset with Updated Weights**
+            #     print("Reloading dataset with updated weights...")
                 
-                # Update file paths to point to new_weights directory
-                self.hp.dataset_path = new_weights_path  # Ensure the new path is used
+            #     # Update file paths to point to new_weights directory
+            #     self.hp.dataset_path = new_weights_path  # Ensure the new path is used
 
-                self.train_loader = get_loader(self.hp, self.hp, shuffle=True, mode='train')
-                self.dev_loader = get_loader(self.hp, self.hp, shuffle=False, mode='dev')
-                self.test_loader = get_loader(self.hp, self.hp, shuffle=False, mode='test')
+            #     self.train_loader = get_loader(self.hp, self.hp, shuffle=True, mode='train')
+            #     self.dev_loader = get_loader(self.hp, self.hp, shuffle=False, mode='dev')
+            #     self.test_loader = get_loader(self.hp, self.hp, shuffle=False, mode='test')
 
-                print("Dataset reloaded successfully!")
+            #     print("Dataset reloaded successfully!")
             
             if val_loss < best_valid or test_loss < best_mae:
                 # update best validation
@@ -366,37 +366,37 @@ class Solver(object):
                     save_results(val_ids, val_results, val_truths, val_hiddens, "dev", self.output_dir)
                     save_results(ids, results, truths, hiddens, "test", self.output_dir)
 
-                    # if self.hp.num_modality > 1:
-                    #     ### Update KL divergence-based weights
-                    #     update_kl_weights(self.hp, epoch, smooth_factor, ['train', 'dev', 'test'], new_weights_path)
+                    if self.hp.num_modality > 1:
+                        ### Update KL divergence-based weights
+                        update_kl_weights(self.hp, epoch, smooth_factor, ['train', 'dev', 'test'], new_weights_path)
                                                 
-                    #     # ## Update smooth factor
-                    #     # f1_delta = all_f1 - best_f1
-                    #     # best_f1 = all_f1
-                    #     # if f1_delta > 0:
-                    #     #     smooth_factor = min(smooth_factor + decay_rate, 1)  # Cap at 1 to avoid overshooting
-                    #     # else:
-                    #     #     smooth_factor = max(smooth_factor - decay_rate, 0)
-                    #     # print("New smooth factor: ", smooth_factor)
+                        # ## Update smooth factor
+                        # f1_delta = all_f1 - best_f1
+                        # best_f1 = all_f1
+                        # if f1_delta > 0:
+                        #     smooth_factor = min(smooth_factor + decay_rate, 1)  # Cap at 1 to avoid overshooting
+                        # else:
+                        #     smooth_factor = max(smooth_factor - decay_rate, 0)
+                        # print("New smooth factor: ", smooth_factor)
 
-                    #     loss_delta = test_loss - best_mae
-                    #     if loss_delta > 0:
-                    #         smooth_factor = min(smooth_factor + decay_rate, 1)
-                    #     else:
-                    #         smooth_factor = max(smooth_factor - decay_rate, 0)
-                    #     print("New smooth factor: ", smooth_factor)
+                        loss_delta = test_loss - best_mae
+                        if loss_delta < 0:
+                            smooth_factor = min(smooth_factor + decay_rate, 1)
+                        else:
+                            smooth_factor = max(smooth_factor - decay_rate, 0)
+                        print("New smooth factor: ", smooth_factor)
 
-                    #     # **Reload Dataset with Updated Weights**
-                    #     print("Reloading dataset with updated weights...")
+                        # **Reload Dataset with Updated Weights**
+                        print("Reloading dataset with updated weights...")
                         
-                    #     # Update file paths to point to new_weights directory
-                    #     self.hp.dataset_path = new_weights_path  # Ensure the new path is used
+                        # Update file paths to point to new_weights directory
+                        self.hp.dataset_path = new_weights_path  # Ensure the new path is used
 
-                    #     self.train_loader = get_loader(self.hp, self.hp, shuffle=True, mode='train')
-                    #     self.dev_loader = get_loader(self.hp, self.hp, shuffle=False, mode='dev')
-                    #     self.test_loader = get_loader(self.hp, self.hp, shuffle=False, mode='test')
+                        self.train_loader = get_loader(self.hp, self.hp, shuffle=True, mode='train')
+                        self.dev_loader = get_loader(self.hp, self.hp, shuffle=False, mode='dev')
+                        self.test_loader = get_loader(self.hp, self.hp, shuffle=False, mode='test')
 
-                    #     print("Dataset reloaded successfully!")
+                        print("Dataset reloaded successfully!")
 
                 # for ur_funny we don't care about
                 if self.hp.dataset == "ur_funny":

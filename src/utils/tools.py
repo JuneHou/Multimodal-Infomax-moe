@@ -147,6 +147,10 @@ def compute_mi_weights(unimodal_preds, multimodal_preds):
 
     return mi_weights
 
+def compute_s_rho(rho):
+    rho = np.clip(rho, -0.999, 0.999)
+    return 1 - 2 * ((1 - rho ** 2) ** 0.25) / np.sqrt(4 - rho ** 2)
+
 def update_kl_weights(args, epoch, smooth_factor, datasets, new_weights_path):
     """
     Updates KL divergence-based modality weights and saves new `.pkl` files.
@@ -162,7 +166,7 @@ def update_kl_weights(args, epoch, smooth_factor, datasets, new_weights_path):
         print(f"Updating weights for {dataset} dataset...")
 
         # **1. Merge Unimodal Results by `ids`**
-        uni_fold = f"/data/wang/junh/results/MMIM/unimodal/"
+        uni_fold = f"/data/wang/junh/results/MMIM/unimodal_variance/"
         unimodal_dfs = []
         for modality in modalities:
             uni_path = os.path.join(uni_fold, f"{args.dataset}_{modality.lower()}_{args.n_class}_{dataset}_results.csv")
@@ -173,7 +177,7 @@ def update_kl_weights(args, epoch, smooth_factor, datasets, new_weights_path):
                 # Ensure 'Predicted' is parsed correctly from list-like strings
                 df['Predicted'] = df['Predicted'].apply(lambda x: literal_eval(x)[0] if isinstance(x, str) else x)
                 
-                df = df[['ids', 'Predicted']].rename(columns={'Predicted': modality})
+                df = df[['ids', 'Predicted', 'log_sigma_p']].rename(columns={'Predicted': modality, 'log_sigma_p': f'log_sigma_p_{modality}'})
                 unimodal_dfs.append(df)
             else:
                 print(f"Warning: {uni_path} not found!")
@@ -199,46 +203,60 @@ def update_kl_weights(args, epoch, smooth_factor, datasets, new_weights_path):
         matched_instances = len(merged_df)
         print(f"Matched {matched_instances} instances between unimodal and multimodal.")
 
-        # **3. Train Variance Estimator (Every Time We Update KL Weights)**
-        device = torch.device("cuda")
-        hidden_values = np.stack(merged_df['hidden'].values)
-        input_dim = hidden_values.shape[1]
-        hidden_tensor = torch.tensor(hidden_values, dtype=torch.float32, device="cuda")
+        # # **3. Train Variance Estimator (Every Time We Update KL Weights)**
+        # device = torch.device("cuda")
+        # hidden_values = np.stack(merged_df['hidden'].values)
+        # input_dim = hidden_values.shape[1]
+        # hidden_tensor = torch.tensor(hidden_values, dtype=torch.float32, device="cuda")
 
-        # Convert multimodal hidden representations into a dataset
-        dataset_torch = torch.utils.data.TensorDataset(hidden_tensor)
+        # pred_means = merged_df['Multi'].values.reshape(-1, 1)
+        # mean_tensor = torch.tensor(pred_means, dtype=torch.float32, device=device)
 
-        # Ensure DataLoader uses the same device as model
-        data_loader = torch.utils.data.DataLoader(
-            dataset_torch, batch_size=32, shuffle=True, generator=torch.Generator(device=device)
-        )
+        # # Step 2: Create dataset and dataloader
+        # dataset_torch = torch.utils.data.TensorDataset(hidden_tensor, mean_tensor)
+        # data_loader = torch.utils.data.DataLoader(
+        #     dataset_torch, batch_size=32, shuffle=True,
+        #     generator=torch.Generator(device=device)
+        # )
 
-        # Initialize variance estimator
-        variance_model = VarianceEstimator(input_dim).to(device)
+        # # Initialize variance estimator
+        # variance_model = VarianceEstimator(input_dim).to(device)
 
-        # Train variance estimator
-        variance_model = train_variance_estimator(variance_model, data_loader, device=device)
+        # # Train variance estimator
+        # variance_model = train_variance_estimator(variance_model, data_loader, device=device)
 
-        # **4. Compute KL-Divergence Weights Using Multimodal Variance**
-        variance_model.eval()
-        log_sigma_q = variance_model(hidden_tensor).cpu().detach().numpy().flatten()
+        # # **4. Compute KL-Divergence Weights Using Multimodal Variance**
+        # variance_model.eval()
+        # log_sigma_q = variance_model(hidden_tensor).cpu().detach().numpy().flatten()
 
-        # **Compute KL divergence with learned variance**
-        for modality in ['text', 'audio', 'video']:
-            merged_df[f'kl_{modality}'] = merged_df.apply(
-                lambda row: max(0.00001, float(kl_divergence_SAC(row[modality], row['Multi'], np.log(0.1), log_sigma_q[row.name]))),
+        # # **Compute KL divergence with learned variance**
+        # for modality in ['text', 'audio', 'video']:
+        #     log_sigma_p = merged_df[f'log_sigma_p_{modality}'].values
+        #     merged_df[f'kl_{modality}'] = merged_df.apply(
+        #         lambda row: max(0.00001, float(kl_divergence_SAC(row[modality], row['Multi'], log_sigma_p[row.name], log_sigma_q[row.name]))),
+        #         axis=1
+        #     )
+        
+        # for modality in modalities:
+        #     # Min-Max Normalization
+        #     min_kl = merged_df[f'kl_{modality}'].min()
+        #     max_kl = merged_df[f'kl_{modality}'].max()
+            
+        #     if max_kl - min_kl > 0:  # Avoid division by zero
+        #         merged_df[f'kl_{modality}'] = (merged_df[f'kl_{modality}'] - min_kl) / (max_kl - min_kl)
+        #     else:
+        #         merged_df[f'kl_{modality}'] = 0.0001 
+
+        for modality in modalities:
+            merged_df[f'corr_{modality}'] = merged_df.apply(
+                lambda row: np.corrcoef(row[modality], row['Multi'])[0, 1]
+                if np.std(row[modality]) > 0 and np.std(row['Multi']) > 0 else 0,
                 axis=1
             )
-        
-        for modality in modalities:
-            # Min-Max Normalization
-            min_kl = merged_df[f'kl_{modality}'].min()
-            max_kl = merged_df[f'kl_{modality}'].max()
-            
-            if max_kl - min_kl > 0:  # Avoid division by zero
-                merged_df[f'kl_{modality}'] = (merged_df[f'kl_{modality}'] - min_kl) / (max_kl - min_kl)
-            else:
-                merged_df[f'kl_{modality}'] = 0.0001 
+            # Convert back from [0,1] to [-1,1] before Sρ
+            merged_df[f'srho_{modality}'] = merged_df[f'corr_{modality}'].apply(
+                lambda x: compute_s_rho(2 * x - 1)
+            )
             
         ##############################################################
         # **Compute Correlation Coefficient**
@@ -262,7 +280,9 @@ def update_kl_weights(args, epoch, smooth_factor, datasets, new_weights_path):
             # Multiply KL weights by correlation coefficient weights
             #############################################################
             # merged_df[f'final_weight_{modality}'] = merged_df[f'kl_{modality}'] * cc_weights[modality]
-            merged_df[f'final_weight_{modality}'] = merged_df[f'kl_{modality}'] * mi_weights[modality]
+            # merged_df[f'final_weight_{modality}'] = merged_df[f'kl_{modality}'] * mi_weights[modality]
+            corr = merged_df[f'corr_{modality}']
+            merged_df[f'final_weight_{modality}'] = 2*((1-corr**2)**(1/4))/np.sqrt(4-corr**2) * mi_weights[modality]
         
         # **LOG ALL WEIGHTS**
         log_path = os.path.join(f"/data/wang/junh/results/MMIM/{args.out_folder}/", f"{args.dataset}_weights_log_epoch{epoch}.csv")
