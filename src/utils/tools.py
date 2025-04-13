@@ -147,9 +147,10 @@ def compute_mi_weights(unimodal_preds, multimodal_preds):
 
     return mi_weights
 
-def compute_s_rho(rho):
-    rho = np.clip(rho, -0.999, 0.999)
-    return 1 - 2 * ((1 - rho ** 2) ** 0.25) / np.sqrt(4 - rho ** 2)
+def normalize(x):
+    x = np.array(x)
+    return (x - np.mean(x)) / (np.std(x) + 1e-6)
+
 
 def update_kl_weights(args, epoch, smooth_factor, datasets, new_weights_path):
     """
@@ -249,14 +250,11 @@ def update_kl_weights(args, epoch, smooth_factor, datasets, new_weights_path):
 
         for modality in modalities:
             merged_df[f'corr_{modality}'] = merged_df.apply(
-                lambda row: np.corrcoef(row[modality], row['Multi'])[0, 1]
+                lambda row: np.corrcoef(normalize(row[modality]), normalize(row['Multi']))[0, 1]
                 if np.std(row[modality]) > 0 and np.std(row['Multi']) > 0 else 0,
                 axis=1
             )
-            # Convert back from [0,1] to [-1,1] before Sρ
-            merged_df[f'srho_{modality}'] = merged_df[f'corr_{modality}'].apply(
-                lambda x: compute_s_rho(2 * x - 1)
-            )
+
             
         ##############################################################
         # **Compute Correlation Coefficient**
@@ -282,7 +280,7 @@ def update_kl_weights(args, epoch, smooth_factor, datasets, new_weights_path):
             # merged_df[f'final_weight_{modality}'] = merged_df[f'kl_{modality}'] * cc_weights[modality]
             # merged_df[f'final_weight_{modality}'] = merged_df[f'kl_{modality}'] * mi_weights[modality]
             corr = merged_df[f'corr_{modality}']
-            merged_df[f'final_weight_{modality}'] = 2*((1-corr**2)**(1/4))/np.sqrt(4-corr**2) * mi_weights[modality]
+            merged_df[f'final_weight_{modality}'] = 2*((1-corr**2)**(1/4))/np.sqrt(4-corr**2)
         
         # **LOG ALL WEIGHTS**
         log_path = os.path.join(f"/data/wang/junh/results/MMIM/{args.out_folder}/", f"{args.dataset}_weights_log_epoch{epoch}.csv")
