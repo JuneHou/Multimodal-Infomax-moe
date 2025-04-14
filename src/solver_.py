@@ -17,6 +17,7 @@ from utils.eval_metrics import *
 from utils.tools import *
 from data_loader import get_loader
 from model_ import MMIM
+from tqdm import tqdm
 
 class Solver(object):
     def __init__(self, hyp_params, train_loader, dev_loader, test_loader, is_train=True, model=None, pretrained_emb=None):
@@ -143,7 +144,7 @@ class Solver(object):
                 mem_pos_va = []
                 mem_neg_va = []
 
-            for i_batch, batch_data in enumerate(self.train_loader):
+            for i_batch, batch_data in tqdm(enumerate(self.train_loader)):
                 text, visual, vlens, audio, alens, y, l, bert_sent, bert_sent_type, bert_sent_mask, ids, text_weights, visual_weights, acoustic_weights = batch_data
 
                 # # for mosei we only use 50% dataset in stage 1
@@ -225,7 +226,7 @@ class Solver(object):
         
             results = []
             truths = []
-            hiddens = []
+            all_vars = []
             eval_ids = []
 
             with torch.no_grad():
@@ -247,12 +248,12 @@ class Solver(object):
                     batch_size = lengths.size(0) # bert_sent in size (bs, seq_len, emb_size)
 
                     # we don't need lld and bound anymore
-                    preds, cat_hidden = model(text, vision, audio, vlens, alens, bert_sent, bert_sent_type, bert_sent_mask, \
+                    preds, variance = model(text, vision, audio, vlens, alens, bert_sent, bert_sent_type, bert_sent_mask, \
                         text_weights, visual_weights, acoustic_weights)
 
                     results.append(preds)  # Save continuous outputs
                     truths.append(y)      # Save ground truth labels
-                    hiddens.append(cat_hidden)
+                    all_vars.append(variance)
                     eval_ids.extend(ids)
 
                     if self.hp.n_class == 2:
@@ -280,9 +281,9 @@ class Solver(object):
 
             results = torch.cat(results)
             truths = torch.cat(truths)
-            hiddens = torch.cat(hiddens)
+            all_vars = torch.cat(all_vars)
 
-            return avg_loss, results, truths, eval_ids, hiddens
+            return avg_loss, results, truths, eval_ids, all_vars
 
         best_valid = 1e8
         last_val_loss = float("inf")
@@ -306,9 +307,9 @@ class Solver(object):
             # minimize all losses left
             train_loss = train(model, optimizer_main, criterion, 1)
 
-            val_loss, val_results, val_truths, val_ids, val_hiddens = evaluate(model, criterion, 'val')
-            test_loss, results, truths, ids, hiddens = evaluate(model, criterion, 'test')
-            _, train_results, train_truths, train_ids, train_hiddens = evaluate(model, criterion, 'train')
+            val_loss, val_results, val_truths, val_ids, val_vars = evaluate(model, criterion, 'val')
+            test_loss, results, truths, ids, test_vars = evaluate(model, criterion, 'test')
+            _, train_results, train_truths, train_ids, train_vars = evaluate(model, criterion, 'train')
             
             end = time.time()
             duration = end-start
@@ -362,9 +363,9 @@ class Solver(object):
                     elif self.hp.dataset == 'mosi' and self.hp.n_class == 1:
                         best_results_dict, all_f1 = eval_mosi(results, truths, True, log_file)
                     
-                    save_results(train_ids, train_results, train_truths, train_hiddens, "train", self.output_dir)
-                    save_results(val_ids, val_results, val_truths, val_hiddens, "dev", self.output_dir)
-                    save_results(ids, results, truths, hiddens, "test", self.output_dir)
+                    save_results(train_ids, train_results, train_truths, train_vars, "train", self.output_dir)
+                    save_results(val_ids, val_results, val_truths, val_vars, "dev", self.output_dir)
+                    save_results(ids, results, truths, test_vars, "test", self.output_dir)
 
                     if self.hp.num_modality > 1:
                         ### Update KL divergence-based weights

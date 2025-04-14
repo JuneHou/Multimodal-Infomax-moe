@@ -137,6 +137,12 @@ def get_args():
     parser.add_argument('--num_modality', type=int, default=3,
                         help='number of modality to use in MoE')
 
+    # Weights type
+    parser.add_argument('--weights_type', type=str, default='kl',
+                        help='weights')
+    parser.add_argument('--kl_type', type=str, default='joint',
+                        help='kl weights')
+
     # Logistics
     parser.add_argument('--log_interval', type=int, default=100,
                         help='frequency of result logging (default: 100)')

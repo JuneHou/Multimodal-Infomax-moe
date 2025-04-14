@@ -32,6 +32,55 @@ class ModalProjection(nn.Module):
     def forward(self, x):
         return self.fc2(self.act(self.fc1(x)))
 
+class VariableVariancePred(nn.Module):
+    """ Variable Variance Prediction
+        Variance of N sample given the target:
+        var = 1/N * sum_i (x_i - mu)^2
+    
+    """
+
+    def __init__(self, input_dim, hidden_dim, dropout, output_dim = 1, n_sample = 1):
+        super(VariableVariancePred, self).__init__()
+        self.input_dim = input_dim
+        self.hidden_dim = hidden_dim
+        self.output_dim = output_dim
+        self.n_sample = n_sample
+
+        self.drop = nn.Dropout(p=dropout)
+        self.fc1 = nn.Linear(input_dim, hidden_dim)
+        self.fc2 = nn.Linear(hidden_dim, hidden_dim)
+        self.fc3 = nn.Linear(hidden_dim, output_dim)
+        self.fc_var = nn.Linear(hidden_dim, output_dim)
+
+    def forward(self, x, train = False):
+        # input torch.Size([32, 384])
+        x = self.drop(x)
+        # x.shape = torch.Size([32, 128])
+        x = torch.tanh(self.fc1(x))
+        x = torch.tanh(self.fc2(x))
+        mu = self.fc3(x)
+        std = torch.exp(self.fc_var(x).clamp(-20, 2))
+
+        dist = torch.distributions.Normal(mu, std)
+
+        if self.n_sample > 1:
+            x = dist.rsample(torch.Size([self.n_sample]))  # (n_sample, batch, output_dim)
+            x = x.permute(1, 0, 2)  # (batch, n_sample, output_dim)
+        else:
+            x = dist.sample()  # (batch, output_dim)
+
+        return x, mu, std
+
+
+        # # Just for testing
+        # if train:
+        #     return std, x
+        # else:
+        #     return std, mu
+
+
+
+
 class MultiModalEncoder(nn.Module):
     """ MultiModalEncoder including modality specific projections and transformer encoder for fusion """
     def __init__(self, hp, text_dim=768, vis_dim=16, aud_dim=16, hidden_dim=128, n_heads=8, n_layers=3, device=None):
@@ -56,11 +105,19 @@ class MultiModalEncoder(nn.Module):
             device=self.device,
             output_dim=output_dim)  # Pass the device object)
 
-        self.fusion_prj = SubNet(
-            in_size = hidden_dim * hp.num_modality,
-            hidden_size = 128,
-            n_class = hp.n_class,
-            dropout = 0.1
+        # self.fusion_prj = SubNet(
+        #     in_size = hidden_dim * hp.num_modality,
+        #     hidden_size = 128,
+        #     n_class = hp.n_class,
+        #     dropout = 0.1
+        # )
+
+        self.fusion_prj = VariableVariancePred(
+            input_dim=hidden_dim * hp.num_modality,
+            hidden_dim=hidden_dim,
+            dropout=0.1,
+            output_dim=hp.n_class,
+            n_sample=1
         )
 
         self.to(device)
@@ -88,12 +145,14 @@ class MultiModalEncoder(nn.Module):
         fused_output, _ = self.fusion_transformer(combined, modality)  # Back to (batch, 3, 128)
         cat_hidden = torch.cat(fused_output, dim=1)
 
-        _, fused_output = self.fusion_prj(cat_hidden) # logits is for categorical labels
-        if self.hp.n_class == 2:
-            fused_output = torch.sigmoid(fused_output)
-        elif self.hp.n_class > 2:
-            fused_output = torch.softmax(fused_output, dim=-1)
-        return fused_output, cat_hidden
+        _, fused_output, variance = self.fusion_prj(cat_hidden) # logits is for categorical labels
+
+        # if self.hp.n_class == 2:
+        #     fused_output = torch.sigmoid(fused_output)
+        # elif self.hp.n_class > 2:
+        #     fused_output = torch.softmax(fused_output, dim=-1)
+
+        return fused_output, variance
 
 
 class MMIM(nn.Module):
@@ -170,6 +229,6 @@ class MMIM(nn.Module):
             # torch.Size([261, 32, 20]) to torch.Size([32, 16]) 
         else :
             visual = None
-        fused_output, cat_hidden = self.multi_modal_encoder(text, visual, acoustic, text_weights, visual_weights, acoustic_weights) 
+        fused_output, variance = self.multi_modal_encoder(text, visual, acoustic, text_weights, visual_weights, acoustic_weights) 
 
-        return fused_output, cat_hidden
+        return fused_output, variance

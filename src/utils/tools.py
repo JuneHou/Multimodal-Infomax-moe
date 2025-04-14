@@ -62,13 +62,13 @@ def load_pickle(path):
     with open(path, 'rb') as f:
         return pickle.load(f)
 
-def save_results(eval_ids, results, truths, hiddens, mode, output_dir):
+def save_results(eval_ids, results, truths, all_vars, mode, output_dir):
     # Save predictions
     results_df = pd.DataFrame({
         "ids": eval_ids,
         "Predicted": [list(row.cpu().detach().numpy()) for row in results],  # Continuous outputs before L1 loss
         "Ground_Truth": [list(row.cpu().detach().numpy()) for row in truths],
-        "hidden": [list(row.cpu().detach().numpy()) for row in hiddens]
+        "std": [list(row.cpu().detach().numpy()) for row in all_vars]
     })
     output_file = f"{output_dir}_{mode}_results.csv"
     results_df.to_csv(output_file, index=False)
@@ -167,7 +167,7 @@ def update_kl_weights(args, epoch, smooth_factor, datasets, new_weights_path):
         print(f"Updating weights for {dataset} dataset...")
 
         # **1. Merge Unimodal Results by `ids`**
-        uni_fold = f"/data/wang/junh/results/MMIM/unimodal_variance/"
+        uni_fold = f"/data/wang/junh/results/MMIM/unimodal_std/"
         unimodal_dfs = []
         for modality in modalities:
             uni_path = os.path.join(uni_fold, f"{args.dataset}_{modality.lower()}_{args.n_class}_{dataset}_results.csv")
@@ -178,7 +178,7 @@ def update_kl_weights(args, epoch, smooth_factor, datasets, new_weights_path):
                 # Ensure 'Predicted' is parsed correctly from list-like strings
                 df['Predicted'] = df['Predicted'].apply(lambda x: literal_eval(x)[0] if isinstance(x, str) else x)
                 
-                df = df[['ids', 'Predicted', 'log_sigma_p']].rename(columns={'Predicted': modality, 'log_sigma_p': f'log_sigma_p_{modality}'})
+                df = df[['ids', 'Predicted', 'std']].rename(columns={'Predicted': modality, 'std': f'log_sigma_p_{modality}'})
                 unimodal_dfs.append(df)
             else:
                 print(f"Warning: {uni_path} not found!")
@@ -195,65 +195,76 @@ def update_kl_weights(args, epoch, smooth_factor, datasets, new_weights_path):
 
         multi_df = pd.read_csv(multimodal_file)
         multi_df['Predicted'] = multi_df['Predicted'].apply(lambda x: literal_eval(x)[0] if isinstance(x, str) else x)
-        multi_df['hidden'] = multi_df['hidden'].apply(lambda x: ast.literal_eval(x) if isinstance(x, str) else x)
+        multi_df['std'] = multi_df['std'].apply(
+            lambda x: float(ast.literal_eval(x)[0]) if isinstance(x, str) else float(x)
+        )
+
         new_multi = multi_df[['ids', 'Predicted']].rename(columns={'Predicted': 'Multi'})
 
         merged_df = merged_df.merge(new_multi, on="ids", how="inner")
-        merged_df = merged_df.merge(multi_df[['ids', 'hidden']], on="ids", how="left")
+        merged_df = merged_df.merge(multi_df[['ids', 'std']], on="ids", how="left")
 
         matched_instances = len(merged_df)
         print(f"Matched {matched_instances} instances between unimodal and multimodal.")
 
-        # # **3. Train Variance Estimator (Every Time We Update KL Weights)**
-        # device = torch.device("cuda")
-        # hidden_values = np.stack(merged_df['hidden'].values)
-        # input_dim = hidden_values.shape[1]
-        # hidden_tensor = torch.tensor(hidden_values, dtype=torch.float32, device="cuda")
+        if args.kl_type == "sac":
+            # **3. Train Variance Estimator (Every Time We Update KL Weights)**
+            device = torch.device("cuda")
+            hidden_values = np.stack(merged_df['hidden'].values)
+            input_dim = hidden_values.shape[1]
+            hidden_tensor = torch.tensor(hidden_values, dtype=torch.float32, device="cuda")
 
-        # pred_means = merged_df['Multi'].values.reshape(-1, 1)
-        # mean_tensor = torch.tensor(pred_means, dtype=torch.float32, device=device)
+            pred_means = merged_df['Multi'].values.reshape(-1, 1)
+            mean_tensor = torch.tensor(pred_means, dtype=torch.float32, device=device)
 
-        # # Step 2: Create dataset and dataloader
-        # dataset_torch = torch.utils.data.TensorDataset(hidden_tensor, mean_tensor)
-        # data_loader = torch.utils.data.DataLoader(
-        #     dataset_torch, batch_size=32, shuffle=True,
-        #     generator=torch.Generator(device=device)
-        # )
-
-        # # Initialize variance estimator
-        # variance_model = VarianceEstimator(input_dim).to(device)
-
-        # # Train variance estimator
-        # variance_model = train_variance_estimator(variance_model, data_loader, device=device)
-
-        # # **4. Compute KL-Divergence Weights Using Multimodal Variance**
-        # variance_model.eval()
-        # log_sigma_q = variance_model(hidden_tensor).cpu().detach().numpy().flatten()
-
-        # # **Compute KL divergence with learned variance**
-        # for modality in ['text', 'audio', 'video']:
-        #     log_sigma_p = merged_df[f'log_sigma_p_{modality}'].values
-        #     merged_df[f'kl_{modality}'] = merged_df.apply(
-        #         lambda row: max(0.00001, float(kl_divergence_SAC(row[modality], row['Multi'], log_sigma_p[row.name], log_sigma_q[row.name]))),
-        #         axis=1
-        #     )
-        
-        # for modality in modalities:
-        #     # Min-Max Normalization
-        #     min_kl = merged_df[f'kl_{modality}'].min()
-        #     max_kl = merged_df[f'kl_{modality}'].max()
-            
-        #     if max_kl - min_kl > 0:  # Avoid division by zero
-        #         merged_df[f'kl_{modality}'] = (merged_df[f'kl_{modality}'] - min_kl) / (max_kl - min_kl)
-        #     else:
-        #         merged_df[f'kl_{modality}'] = 0.0001 
-
-        for modality in modalities:
-            merged_df[f'corr_{modality}'] = merged_df.apply(
-                lambda row: np.corrcoef(normalize(row[modality]), normalize(row['Multi']))[0, 1]
-                if np.std(row[modality]) > 0 and np.std(row['Multi']) > 0 else 0,
-                axis=1
+            # Step 2: Create dataset and dataloader
+            dataset_torch = torch.utils.data.TensorDataset(hidden_tensor, mean_tensor)
+            data_loader = torch.utils.data.DataLoader(
+                dataset_torch, batch_size=32, shuffle=True,
+                generator=torch.Generator(device=device)
             )
+
+            # Initialize variance estimator
+            variance_model = VarianceEstimator(input_dim).to(device)
+
+            # Train variance estimator
+            variance_model = train_variance_estimator(variance_model, data_loader, device=device)
+
+            # **4. Compute KL-Divergence Weights Using Multimodal Variance**
+            variance_model.eval()
+            log_sigma_q = variance_model(hidden_tensor).cpu().detach().numpy().flatten()
+
+        if args.kl_type == "joint"
+            # **Compute KL divergence with learned variance**
+            for modality in ['text', 'audio', 'video']:
+                sigma_p = merged_df[f'log_sigma_p_{modality}'].apply(lambda x: float(ast.literal_eval(x)[0]) if isinstance(x, str) else x).values.astype(np.float32)
+                log_sigma_p = np.log(sigma_p + 1e-6)  # Avoid log(0)
+                sigma_q = merged_df['std'].values.astype(np.float32)
+                log_sigma_q = np.log(sigma_q + 1e-6)
+                merged_df[f'kl_{modality}'] = merged_df.apply(
+                    lambda row: max(0.00001, float(kl_divergence_SAC(row[modality], row['Multi'], log_sigma_p[row.name], log_sigma_q[row.name]))),
+                    axis=1
+                )
+
+        if args.kl_type == "bhm":
+            for modality in modalities:
+                merged_df[f'corr_{modality}'] = merged_df.apply(
+                    lambda row: np.corrcoef(normalize(row[modality]), normalize(row['Multi']))[0, 1]
+                    if np.std(row[modality]) > 0 and np.std(row['Multi']) > 0 else 0,
+                    axis=1
+                )
+                corr = merged_df[f'corr_{modality}']
+                merged_df[f'final_weight_{modality}'] = 2*((1-corr**2)**(1/4))/np.sqrt(4-corr**2)
+        
+        for modality in modalities:
+            # Min-Max Normalization
+            min_kl = merged_df[f'kl_{modality}'].min()
+            max_kl = merged_df[f'kl_{modality}'].max()
+            
+            if max_kl - min_kl > 0:  # Avoid division by zero
+                merged_df[f'kl_{modality}'] = (merged_df[f'kl_{modality}'] - min_kl) / (max_kl - min_kl)
+            else:
+                merged_df[f'kl_{modality}'] = 0.0001 
 
             
         ##############################################################
@@ -277,10 +288,12 @@ def update_kl_weights(args, epoch, smooth_factor, datasets, new_weights_path):
         for modality in modalities:
             # Multiply KL weights by correlation coefficient weights
             #############################################################
-            # merged_df[f'final_weight_{modality}'] = merged_df[f'kl_{modality}'] * cc_weights[modality]
-            # merged_df[f'final_weight_{modality}'] = merged_df[f'kl_{modality}'] * mi_weights[modality]
-            corr = merged_df[f'corr_{modality}']
-            merged_df[f'final_weight_{modality}'] = 2*((1-corr**2)**(1/4))/np.sqrt(4-corr**2)
+            if args.weights_type == "kl":
+                merged_df[f'final_weight_{modality}'] = merged_df[f'kl_{modality}']
+            elif args.weights_type == "kl+cc": 
+                merged_df[f'final_weight_{modality}'] = merged_df[f'kl_{modality}'] * cc_weights[modality]
+            elif args.weights_type == "kl+mi":
+                merged_df[f'final_weight_{modality}'] = merged_df[f'kl_{modality}'] * mi_weights[modality]
         
         # **LOG ALL WEIGHTS**
         log_path = os.path.join(f"/data/wang/junh/results/MMIM/{args.out_folder}/", f"{args.dataset}_weights_log_epoch{epoch}.csv")
@@ -316,8 +329,6 @@ def update_kl_weights(args, epoch, smooth_factor, datasets, new_weights_path):
                     ###############################################################
                     weight_list[-3 + j] = (smooth_factor * matching_row[f'final_weight_{modality}']) + (1 - smooth_factor) * weight_list[-3 + j]
                     # weight_list[-3 + j] = matching_row[f'final_weight_{modality}']
-                    # weight_list[-3 + j] = (smooth_factor * matching_row[f'kl_{modality}']) + (1 - smooth_factor) * weight_list[-3 + j]
-                    # weight_list[-3 + j] = matching_row[f'kl_{modality}']
 
                 # Convert updated weights back to a tuple
                 stay_list[-3] = tuple(weight_list)
