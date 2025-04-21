@@ -62,7 +62,7 @@ def load_pickle(path):
     with open(path, 'rb') as f:
         return pickle.load(f)
 
-def save_results(eval_ids, results, truths, all_vars, mode, output_dir):
+def save_results(eval_ids, results, truths, all_vars, mode, output_dir, test):
     # Save predictions
     results_df = pd.DataFrame({
         "ids": eval_ids,
@@ -70,8 +70,10 @@ def save_results(eval_ids, results, truths, all_vars, mode, output_dir):
         "Ground_Truth": [list(row.cpu().detach().numpy()) for row in truths],
         "std": [list(row.cpu().detach().numpy()) for row in all_vars]
     })
-    output_file = f"{output_dir}_{mode}_results.csv"
+    output_file = f"{output_dir}_{mode}_results_val.csv"
     results_df.to_csv(output_file, index=False)
+    if test:
+        results_df.to_csv(f"{output_dir}_{mode}_results.csv", index=False)
     print(f"Saved {mode} predictions to {output_file}")
 
 
@@ -82,21 +84,19 @@ def kl_divergence_gaussian(mean_p, mean_q, sigma=0.1):
     kl = np.log(sigma / sigma) + (sigma**2 + (mean_p - mean_q)**2) / (2 * sigma**2) - 0.5
     return kl
 
-def kl_divergence_SAC(mean_p, mean_q, log_sigma_p, log_sigma_q):
+def kl_divergence_SAC(mean_p, mean_q, sigma_p, sigma_q):
     """
     Computes KL divergence between two Gaussian distributions with learnable variance.
 
     Args:
         mean_p (float): Mean of unimodal prediction.
         mean_q (float): Mean of multimodal prediction.
-        log_sigma_p (float): Log variance of unimodal prediction (learnable).
-        log_sigma_q (float): Log variance of multimodal prediction (learnable).
+        sigma_p (float): sigma of unimodal prediction (learnable).
+        sigma_q (float): sigma of multimodal prediction (learnable).
 
     Returns:
         float: KL divergence.
     """
-    sigma_p = np.exp(log_sigma_p)  # Ensure sigma is positive
-    sigma_q = np.exp(log_sigma_q)
 
     kl = np.log(sigma_q / sigma_p) + (sigma_p**2 + (mean_p - mean_q)**2) / (2 * sigma_q**2) - 0.5
     return kl
@@ -167,7 +167,10 @@ def update_kl_weights(args, epoch, smooth_factor, datasets, new_weights_path):
         print(f"Updating weights for {dataset} dataset...")
 
         # **1. Merge Unimodal Results by `ids`**
-        uni_fold = f"/data/wang/junh/results/MMIM/unimodal_std/"
+        if args.kl_type == "residual":
+            uni_fold = f"/data/wang/junh/results/MMIM/unimodal_error/"
+        elif args.kl_type == "joint":
+            uni_fold = f"/data/wang/junh/results/MMIM/unimodal_std/"
         unimodal_dfs = []
         for modality in modalities:
             uni_path = os.path.join(uni_fold, f"{args.dataset}_{modality.lower()}_{args.n_class}_{dataset}_results.csv")
@@ -178,7 +181,7 @@ def update_kl_weights(args, epoch, smooth_factor, datasets, new_weights_path):
                 # Ensure 'Predicted' is parsed correctly from list-like strings
                 df['Predicted'] = df['Predicted'].apply(lambda x: literal_eval(x)[0] if isinstance(x, str) else x)
                 
-                df = df[['ids', 'Predicted', 'std']].rename(columns={'Predicted': modality, 'std': f'log_sigma_p_{modality}'})
+                df = df[['ids', 'Predicted', 'std']].rename(columns={'Predicted': modality, 'std': f'sigma_p_{modality}'})
                 unimodal_dfs.append(df)
             else:
                 print(f"Warning: {uni_path} not found!")
@@ -187,11 +190,9 @@ def update_kl_weights(args, epoch, smooth_factor, datasets, new_weights_path):
         for df in unimodal_dfs[1:]:
             merged_df = merged_df.merge(df, on="ids", how="inner")
 
-        print(f"Merged {len(merged_df)} unimodal instances.")
-
         # **2. Load & Match Multimodal Results by `ids`**
         multi_fold = f"/data/wang/junh/results/MMIM/{args.out_folder}/"
-        multimodal_file = os.path.join(multi_fold, f"{args.dataset}_text_audio_video_{args.n_class}_{dataset}_results.csv")
+        multimodal_file = os.path.join(multi_fold, f"{args.dataset}_text_audio_video_{args.n_class}_{dataset}_results_val.csv")
 
         multi_df = pd.read_csv(multimodal_file)
         multi_df['Predicted'] = multi_df['Predicted'].apply(lambda x: literal_eval(x)[0] if isinstance(x, str) else x)
@@ -232,40 +233,80 @@ def update_kl_weights(args, epoch, smooth_factor, datasets, new_weights_path):
 
             # **4. Compute KL-Divergence Weights Using Multimodal Variance**
             variance_model.eval()
-            log_sigma_q = variance_model(hidden_tensor).cpu().detach().numpy().flatten()
+            sigma_q = variance_model(hidden_tensor).cpu().detach().numpy().flatten()
 
-        if args.kl_type == "joint"
-            # **Compute KL divergence with learned variance**
+        # **Compute KL divergence with learned variance**
+        for modality in ['text', 'audio', 'video']:
+            sigma_p = merged_df[f'sigma_p_{modality}'].apply(lambda x: float(ast.literal_eval(x)[0]) if isinstance(x, str) else x).values.astype(np.float32)
+            sigma_p = np.sqrt(sigma_p**2)
+            sigma_q = merged_df['std'].values.astype(np.float32)
+            sigma_q = np.sqrt(sigma_q**2)
+            merged_df[f'kl_{modality}'] = merged_df.apply(
+                lambda row: max(0.00001, float(kl_divergence_SAC(row[modality], row['Multi'], sigma_p[row.name], sigma_q[row.name]))),
+                axis=1
+            )
+
+        # if args.kl_type == "bhm":
+        #     for modality in modalities:
+        #         merged_df[f'corr_{modality}'] = merged_df.apply(
+        #             lambda row: np.corrcoef(normalize(row[modality]), normalize(row['Multi']))[0, 1]
+        #             if np.std(row[modality]) > 0 and np.std(row['Multi']) > 0 else 0,
+        #             axis=1
+        #         )
+        #         corr = merged_df[f'corr_{modality}']
+        #         merged_df[f'final_weight_{modality}'] = 2*((1-corr**2)**(1/4))/np.sqrt(4-corr**2)
+
+        if args.weights_type == "global":
+            global_kl = {}
             for modality in ['text', 'audio', 'video']:
-                sigma_p = merged_df[f'log_sigma_p_{modality}'].apply(lambda x: float(ast.literal_eval(x)[0]) if isinstance(x, str) else x).values.astype(np.float32)
-                log_sigma_p = np.log(sigma_p + 1e-6)  # Avoid log(0)
-                sigma_q = merged_df['std'].values.astype(np.float32)
-                log_sigma_q = np.log(sigma_q + 1e-6)
-                merged_df[f'kl_{modality}'] = merged_df.apply(
-                    lambda row: max(0.00001, float(kl_divergence_SAC(row[modality], row['Multi'], log_sigma_p[row.name], log_sigma_q[row.name]))),
-                    axis=1
-                )
+                # Predicted means
+                p = merged_df[modality].values.astype(np.float32)   # modality predictions
+                q = merged_df['Multi'].values.astype(np.float32)    # multimodal predictions
 
-        if args.kl_type == "bhm":
-            for modality in modalities:
-                merged_df[f'corr_{modality}'] = merged_df.apply(
-                    lambda row: np.corrcoef(normalize(row[modality]), normalize(row['Multi']))[0, 1]
-                    if np.std(row[modality]) > 0 and np.std(row['Multi']) > 0 else 0,
-                    axis=1
-                )
-                corr = merged_df[f'corr_{modality}']
-                merged_df[f'final_weight_{modality}'] = 2*((1-corr**2)**(1/4))/np.sqrt(4-corr**2)
-        
-        for modality in modalities:
-            # Min-Max Normalization
-            min_kl = merged_df[f'kl_{modality}'].min()
-            max_kl = merged_df[f'kl_{modality}'].max()
+                # Means of predictions
+                mu_p = np.mean(p)
+                mu_q = np.mean(q)
+
+                # Variance estimates from averaged squared stds (not from raw residuals)
+                # sigma_p_{modality} is already std (i.e., |y - ŷ|)
+                merged_df[f'sigma_p_{modality}'] = merged_df[f'sigma_p_{modality}'].apply(lambda x: float(ast.literal_eval(x)[0]) if isinstance(x, str) else x).values.astype(np.float32)
+                sigma_p_i = merged_df[f'sigma_p_{modality}'].values.astype(np.float32)
+                merged_df['std'] = merged_df['std'].values.astype(np.float32)
+                sigma_q_i = merged_df['std'].values.astype(np.float32)
+
+                sigma_p = np.sqrt(np.mean(sigma_p_i ** 2))
+                sigma_q = np.sqrt(np.mean(sigma_q_i ** 2))
+
+                # Compute global KL divergence
+                kl = kl_divergence_SAC(mu_p, mu_q, sigma_p, sigma_q)
+                global_kl[modality] = kl
+        else:      
+            # Row-wise normalization: KL weights per instance sum to 1
+            kl_cols = [f'kl_{modality}' for modality in modalities]
+
+            # Compute row-wise sum across modalities
+            kl_values = merged_df[kl_cols].values  # shape (N, 3)
+            row_sums = kl_values.sum(axis=1, keepdims=True)
+
+            # Avoid division by zero
+            row_sums[row_sums == 0] = 1e-6
+
+            # Normalize each row
+            normalized_kl = kl_values / row_sums
+
+            # Assign back to DataFrame
+            for i, modality in enumerate(modalities):
+                merged_df[f'kl_{modality}'] = normalized_kl[:, i] 
+
+        # for modality in modalities:
+        #     # Min-Max Normalization
+        #     min_kl = merged_df[f'kl_{modality}'].min()
+        #     max_kl = merged_df[f'kl_{modality}'].max()
             
-            if max_kl - min_kl > 0:  # Avoid division by zero
-                merged_df[f'kl_{modality}'] = (merged_df[f'kl_{modality}'] - min_kl) / (max_kl - min_kl)
-            else:
-                merged_df[f'kl_{modality}'] = 0.0001 
-
+        #     if max_kl - min_kl > 0:  # Avoid division by zero
+        #         merged_df[f'kl_{modality}'] = (merged_df[f'kl_{modality}'] - min_kl) / (max_kl - min_kl)
+        #     else:
+        #         merged_df[f'kl_{modality}'] = 0.0001
             
         ##############################################################
         # **Compute Correlation Coefficient**
@@ -274,12 +315,18 @@ def update_kl_weights(args, epoch, smooth_factor, datasets, new_weights_path):
 
         cc_weights = compute_cc_weights(unimodal_preds, multimodal_preds)
         cc_weights = {modality: max(0.00001, cc_weights[modality]) for modality in modalities}
+        cc_total = sum(cc_weights.values())
+        cc_weights = {k: v / cc_total for k, v in cc_weights.items()}
         print(f"Correlation Coefficients: {cc_weights}")
         merged_df["cc_text"] = cc_weights["text"]
         merged_df["cc_audio"] = cc_weights["audio"]
         merged_df["cc_video"] = cc_weights["video"]
+
         mi_weights = compute_mi_weights(unimodal_preds, multimodal_preds)
         mi_weights = {modality: max(0.00001, mi_weights[modality]) for modality in modalities}
+        # Normalize MI weights
+        mi_total = sum(mi_weights.values())
+        mi_weights = {k: v / mi_total for k, v in mi_weights.items()}
         merged_df["mi_text"] = mi_weights["text"]
         merged_df["mi_audio"] = mi_weights["audio"]
         merged_df["mi_video"] = mi_weights["video"]
@@ -294,6 +341,8 @@ def update_kl_weights(args, epoch, smooth_factor, datasets, new_weights_path):
                 merged_df[f'final_weight_{modality}'] = merged_df[f'kl_{modality}'] * cc_weights[modality]
             elif args.weights_type == "kl+mi":
                 merged_df[f'final_weight_{modality}'] = merged_df[f'kl_{modality}'] * mi_weights[modality]
+            elif args.weights_type == "global":
+                merged_df[f'final_weight_{modality}'] = global_kl[modality]
         
         # **LOG ALL WEIGHTS**
         log_path = os.path.join(f"/data/wang/junh/results/MMIM/{args.out_folder}/", f"{args.dataset}_weights_log_epoch{epoch}.csv")

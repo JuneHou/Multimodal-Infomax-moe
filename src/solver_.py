@@ -172,7 +172,7 @@ class Solver(object):
                 # else:
                 #     mem = {'tv': None, 'ta': None, 'va': None}
 
-                preds, _ = model(text, visual, audio, vlens, alens, bert_sent, bert_sent_type, bert_sent_mask, \
+                preds = model(text, visual, audio, vlens, alens, bert_sent, bert_sent_type, bert_sent_mask, \
                     text_weights, visual_weights, acoustic_weights, y)
 
                 if self.hp.n_class == 2:
@@ -226,7 +226,7 @@ class Solver(object):
         
             results = []
             truths = []
-            all_vars = []
+            all_sigmas = []
             eval_ids = []
 
             with torch.no_grad():
@@ -248,12 +248,14 @@ class Solver(object):
                     batch_size = lengths.size(0) # bert_sent in size (bs, seq_len, emb_size)
 
                     # we don't need lld and bound anymore
-                    preds, variance = model(text, vision, audio, vlens, alens, bert_sent, bert_sent_type, bert_sent_mask, \
+                    preds = model(text, vision, audio, vlens, alens, bert_sent, bert_sent_type, bert_sent_mask, \
                         text_weights, visual_weights, acoustic_weights)
+
+                    sigmas = y - preds
 
                     results.append(preds)  # Save continuous outputs
                     truths.append(y)      # Save ground truth labels
-                    all_vars.append(variance)
+                    all_sigmas.append(sigmas)
                     eval_ids.extend(ids)
 
                     if self.hp.n_class == 2:
@@ -281,9 +283,9 @@ class Solver(object):
 
             results = torch.cat(results)
             truths = torch.cat(truths)
-            all_vars = torch.cat(all_vars)
+            all_sigmas = torch.cat(all_sigmas)
 
-            return avg_loss, results, truths, eval_ids, all_vars
+            return avg_loss, results, truths, eval_ids, all_sigmas
 
         best_valid = 1e8
         last_val_loss = float("inf")
@@ -307,9 +309,9 @@ class Solver(object):
             # minimize all losses left
             train_loss = train(model, optimizer_main, criterion, 1)
 
-            val_loss, val_results, val_truths, val_ids, val_vars = evaluate(model, criterion, 'val')
-            test_loss, results, truths, ids, test_vars = evaluate(model, criterion, 'test')
-            _, train_results, train_truths, train_ids, train_vars = evaluate(model, criterion, 'train')
+            val_loss, val_results, val_truths, val_ids, val_sigma = evaluate(model, criterion, 'val')
+            test_loss, results, truths, ids, test_sigma = evaluate(model, criterion, 'test')
+            _, train_results, train_truths, train_ids, train_sigma = evaluate(model, criterion, 'train')
             
             end = time.time()
             duration = end-start
@@ -319,38 +321,6 @@ class Solver(object):
             print("-"*50)
             print('Epoch {:2d} | Time {:5.4f} sec | Valid Loss {:5.4f} | Test Loss {:5.4f}'.format(epoch, duration, val_loss, test_loss))
             print("-"*50)
-
-            # if epoch % 5 == 0 and self.hp.num_modality > 1:
-            #     ### Update KL divergence-based weights
-            #     update_kl_weights(self.hp, epoch, smooth_factor, ['train', 'dev', 'test'], new_weights_path)
-                                        
-            #     # ## Update smooth factor
-            #     # f1_delta = all_f1 - best_f1
-            #     # best_f1 = all_f1
-            #     # if f1_delta > 0:
-            #     #     smooth_factor = min(smooth_factor + decay_rate, 1)  # Cap at 1 to avoid overshooting
-            #     # else:
-            #     #     smooth_factor = max(smooth_factor - decay_rate, 0)
-            #     # print("New smooth factor: ", smooth_factor)
-
-            #     loss_delta = test_loss - best_mae
-            #     if loss_delta > 0:
-            #         smooth_factor = min(smooth_factor + decay_rate, 1)
-            #     else:
-            #         smooth_factor = max(smooth_factor - decay_rate, 0)
-            #     print("New smooth factor: ", smooth_factor)
-
-            #     # **Reload Dataset with Updated Weights**
-            #     print("Reloading dataset with updated weights...")
-                
-            #     # Update file paths to point to new_weights directory
-            #     self.hp.dataset_path = new_weights_path  # Ensure the new path is used
-
-            #     self.train_loader = get_loader(self.hp, self.hp, shuffle=True, mode='train')
-            #     self.dev_loader = get_loader(self.hp, self.hp, shuffle=False, mode='dev')
-            #     self.test_loader = get_loader(self.hp, self.hp, shuffle=False, mode='test')
-
-            #     print("Dataset reloaded successfully!")
             
             if val_loss < best_valid or test_loss < best_mae:
                 # update best validation
@@ -359,26 +329,18 @@ class Solver(object):
                     best_valid = val_loss
 
                     if self.hp.dataset in ["mosei_senti", "mosei"] and self.hp.n_class == 1:
-                        best_results_dict, all_f1 = eval_mosei_senti(results, truths, True, log_file)
+                        best_results_dict, all_f1 = eval_mosei_senti(results, truths, True, log_file, False)
                     elif self.hp.dataset == 'mosi' and self.hp.n_class == 1:
-                        best_results_dict, all_f1 = eval_mosi(results, truths, True, log_file)
+                        best_results_dict, all_f1 = eval_mosi(results, truths, True, log_file, False)
                     
-                    save_results(train_ids, train_results, train_truths, train_vars, "train", self.output_dir)
-                    save_results(val_ids, val_results, val_truths, val_vars, "dev", self.output_dir)
-                    save_results(ids, results, truths, test_vars, "test", self.output_dir)
+                    save_results(train_ids, train_results, train_truths, train_sigma, "train", self.output_dir, False)
+                    save_results(val_ids, val_results, val_truths, val_sigma, "dev", self.output_dir, False)
+                    save_results(ids, results, truths, test_sigma, "test", self.output_dir, False)
 
+##########################################################################################################
                     if self.hp.num_modality > 1:
                         ### Update KL divergence-based weights
                         update_kl_weights(self.hp, epoch, smooth_factor, ['train', 'dev', 'test'], new_weights_path)
-                                                
-                        # ## Update smooth factor
-                        # f1_delta = all_f1 - best_f1
-                        # best_f1 = all_f1
-                        # if f1_delta > 0:
-                        #     smooth_factor = min(smooth_factor + decay_rate, 1)  # Cap at 1 to avoid overshooting
-                        # else:
-                        #     smooth_factor = max(smooth_factor - decay_rate, 0)
-                        # print("New smooth factor: ", smooth_factor)
 
                         loss_delta = test_loss - best_mae
                         if loss_delta < 0:
@@ -398,74 +360,28 @@ class Solver(object):
                         self.test_loader = get_loader(self.hp, self.hp, shuffle=False, mode='test')
 
                         print("Dataset reloaded successfully!")
+##########################################################################################################
 
-                # for ur_funny we don't care about
-                if self.hp.dataset == "ur_funny":
-                    eval_humor(results, truths, True)
-                elif test_loss < best_mae:
-                    best_epoch = epoch
-                    best_mae = test_loss
-                    if self.hp.dataset in ["mosei_senti", "mosei"] and self.hp.n_class == 1:
-                        best_results_dict, all_f1 = eval_mosei_senti(results, truths, True, log_file)
-                    elif self.hp.dataset == 'mosi' and self.hp.n_class == 1:
-                        best_results_dict, all_f1 = eval_mosi(results, truths, True, log_file)
-                    elif self.hp.dataset == 'iemocap':
-                        best_results_dict = eval_iemocap(results, truths)
-                    elif self.hp.dataset in ["mosi", "mosei_senti", "mosei"] and self.hp.n_class > 1:
-                        best_results_dict = eval_categorical_labels(results, truths, self.hp.n_class)
-                    
-                    best_results = results
-                    best_truths = truths
-
-                    # save_results(train_ids, train_results, train_truths, "train", self.output_dir)
-                    # save_results(val_ids, val_results, val_truths, "dev", self.output_dir)
-                    # save_results(ids, results, truths, "test", self.output_dir)
-
-                    # if self.hp.num_modality > 1:
-                    #     ### Update KL divergence-based weights
-                    #     update_kl_weights(self.hp, epoch, smooth_factor, ['train', 'dev', 'test'], new_weights_path)
-                        
-                        
-                    #     ### Update smooth factor
-                    #     f1_delta = all_f1 - best_f1
-                    #     best_f1 = all_f1
-                    #     if f1_delta > 0:
-                    #         smooth_factor = min(smooth_factor + decay_rate, 1)  # Cap at 1 to avoid overshooting
-                    #     else:
-                    #         smooth_factor = max(smooth_factor - decay_rate, 0)
-                    #     print("New smooth factor: ", smooth_factor)
-
-                    #     # **Reload Dataset with Updated Weights**
-                    #     print("Reloading dataset with updated weights...")
-                        
-                    #     # Update file paths to point to new_weights directory
-                    #     self.hp.dataset_path = new_weights_path  # Ensure the new path is used
-
-                    #     self.train_loader = get_loader(self.hp, self.hp, shuffle=True, mode='train')
-                    #     self.dev_loader = get_loader(self.hp, self.hp, shuffle=False, mode='dev')
-                    #     self.test_loader = get_loader(self.hp, self.hp, shuffle=False, mode='test')
-
-                    #     print("Dataset reloaded successfully!")
-
-                    # if all_f1 > best_f1:
-                    #     print(f"Saved model at pre_trained_models/MM.pt!")
-                    #     save_model(self.hp, model)
-
-            elif test_loss < best_mae:
-                # save_results(train_ids, train_results, train_truths, "train", self.output_dir)
-                # save_results(val_ids, val_results, val_truths, "val", self.output_dir)
-                # save_results(ids, results, truths, "test", self.output_dir)
-
-                # best_epoch = epoch
-                # best_mae = test_loss
+            # for ur_funny we don't care about
+            if test_loss < best_mae:
+                print("-"*50)
+                print("Best Test Results!")
+                save_results(train_ids, train_results, train_truths, train_sigma, "train", self.output_dir, True)
+                save_results(val_ids, val_results, val_truths, val_sigma, "dev", self.output_dir, True)
+                save_results(ids, results, truths, test_sigma, "test", self.output_dir, True)
+                best_epoch = epoch
+                best_mae = test_loss
                 if self.hp.dataset in ["mosei_senti", "mosei"] and self.hp.n_class == 1:
-                    best_results_dict = eval_mosei_senti(results, truths, True)
+                    best_results_dict, all_f1 = eval_mosei_senti(results, truths, True, log_file, True)
                 elif self.hp.dataset == 'mosi' and self.hp.n_class == 1:
-                    best_results_dict = eval_mosi(results, truths, True)
+                    best_results_dict, all_f1 = eval_mosi(results, truths, True, log_file, True)
                 elif self.hp.dataset == 'iemocap':
                     best_results_dict = eval_iemocap(results, truths)
                 elif self.hp.dataset in ["mosi", "mosei_senti", "mosei"] and self.hp.n_class > 1:
                     best_results_dict = eval_categorical_labels(results, truths, self.hp.n_class)
+                
+                best_results = results
+                best_truths = truths
 
 
             else:

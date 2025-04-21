@@ -25,7 +25,7 @@ def weighted_accuracy(test_preds_emo, test_truth_emo):
 
     return (tp * (n/p) +tn) / (2*n)
 
-def eval_mosei_senti(results, truths, exclude_zero, log_path):
+def eval_mosei_senti(results, truths, exclude_zero, log_path, test):
     test_preds = results.view(-1).cpu().detach().numpy()
     test_truth = truths.view(-1).cpu().detach().numpy()
 
@@ -54,6 +54,8 @@ def eval_mosei_senti(results, truths, exclude_zero, log_path):
 
     # Logging all outputs
     with open(log_path, "a") as f:
+        if test:
+            f.write(f"best test mae! \n")
         f.write(f"MAE: {mae:.4f}\n")
         f.write(f"Correlation Coefficient: {corr:.4f}\n")
         f.write(f"mult_acc_7: {mult_a7:.4f}\n")
@@ -72,8 +74,8 @@ def eval_mosei_senti(results, truths, exclude_zero, log_path):
     print("-" * 50)
     return {'mae':mae, 'corr':corr, 'mult':mult_a7, 'f1':f_score, 'acc2':acc_2}, np.round(f_score, 4)
 
-def eval_mosi(results, truths, exclude_zero, log_path):
-    return eval_mosei_senti(results, truths, exclude_zero, log_path)
+def eval_mosi(results, truths, exclude_zero, log_path, test):
+    return eval_mosei_senti(results, truths, exclude_zero, log_path, test)
 
 def eval_categorical_labels(results, truths, n_class):
     """

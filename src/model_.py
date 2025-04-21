@@ -105,20 +105,20 @@ class MultiModalEncoder(nn.Module):
             device=self.device,
             output_dim=output_dim)  # Pass the device object)
 
-        # self.fusion_prj = SubNet(
-        #     in_size = hidden_dim * hp.num_modality,
-        #     hidden_size = 128,
-        #     n_class = hp.n_class,
-        #     dropout = 0.1
-        # )
-
-        self.fusion_prj = VariableVariancePred(
-            input_dim=hidden_dim * hp.num_modality,
-            hidden_dim=hidden_dim,
-            dropout=0.1,
-            output_dim=hp.n_class,
-            n_sample=1
+        self.fusion_prj = SubNet(
+            in_size = hidden_dim * hp.num_modality,
+            hidden_size = 128,
+            n_class = hp.n_class,
+            dropout = 0.1
         )
+
+        # self.fusion_prj = VariableVariancePred(
+        #     input_dim=hidden_dim * hp.num_modality,
+        #     hidden_dim=hidden_dim,
+        #     dropout=0.1,
+        #     output_dim=hp.n_class,
+        #     n_sample=1
+        # )
 
         self.to(device)
 
@@ -145,15 +145,14 @@ class MultiModalEncoder(nn.Module):
         fused_output, _ = self.fusion_transformer(combined, modality)  # Back to (batch, 3, 128)
         cat_hidden = torch.cat(fused_output, dim=1)
 
-        _, fused_output, variance = self.fusion_prj(cat_hidden) # logits is for categorical labels
+        _, fused_output = self.fusion_prj(cat_hidden) # logits is for categorical labels
 
         # if self.hp.n_class == 2:
         #     fused_output = torch.sigmoid(fused_output)
         # elif self.hp.n_class > 2:
         #     fused_output = torch.softmax(fused_output, dim=-1)
 
-        return fused_output, variance
-
+        return fused_output
 
 class MMIM(nn.Module):
     def __init__(self, hp):
@@ -229,6 +228,6 @@ class MMIM(nn.Module):
             # torch.Size([261, 32, 20]) to torch.Size([32, 16]) 
         else :
             visual = None
-        fused_output, variance = self.multi_modal_encoder(text, visual, acoustic, text_weights, visual_weights, acoustic_weights) 
+        fused_output = self.multi_modal_encoder(text, visual, acoustic, text_weights, visual_weights, acoustic_weights) 
 
-        return fused_output, variance
+        return fused_output
