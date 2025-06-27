@@ -50,7 +50,7 @@ class VariableVariancePred(nn.Module):
         self.fc1 = nn.Linear(input_dim, hidden_dim)
         self.fc2 = nn.Linear(hidden_dim, hidden_dim)
         self.fc3 = nn.Linear(hidden_dim, output_dim)
-        self.fc_var = nn.Linear(hidden_dim, output_dim)
+        # self.fc_var = nn.Linear(hidden_dim, output_dim)
 
     def forward(self, x, train = False):
         # input torch.Size([32, 384])
@@ -58,16 +58,19 @@ class VariableVariancePred(nn.Module):
         # x.shape = torch.Size([32, 128])
         x = torch.tanh(self.fc1(x))
         x = torch.tanh(self.fc2(x))
-        mu = self.fc3(x)
-        std = torch.exp(self.fc_var(x).clamp(-20, 2))
+        # mu = self.fc3(x)
+        x = self.fc3(x)
+        # std = torch.exp(self.fc_var(x).clamp(-20, 2))
 
-        dist = torch.distributions.Normal(mu, std)
+        # dist = torch.distributions.Normal(mu, std)
 
-        if self.n_sample > 1:
-            x = dist.rsample(torch.Size([self.n_sample]))  # (n_sample, batch, output_dim)
-            x = x.permute(1, 0, 2)  # (batch, n_sample, output_dim)
-        else:
-            x = dist.sample()  # (batch, output_dim)
+        # if self.n_sample > 1:
+        #     x = dist.rsample(torch.Size([self.n_sample]))  # (n_sample, batch, output_dim)
+        #     x = x.permute(1, 0, 2)  # (batch, n_sample, output_dim)
+        # else:
+        #     x = dist.sample()  # (batch, output_dim)
+        mu = torch.zeros_like(x)
+        std = torch.ones_like(x)
 
         return x, mu, std
 

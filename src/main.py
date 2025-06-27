@@ -49,7 +49,18 @@ if __name__ == '__main__':
     args.dataset = args.data = dataset
     args.when = args.when
     args.criterion = criterion_dict.get(dataset, 'MSELoss')
+    start_time = time.time()
 
     solver = Solver(args, train_loader=train_loader, dev_loader=valid_loader,
                     test_loader=test_loader, is_train=True)
     solver.train_and_eval()
+
+    print(f"New maximum memory allocated on GPU: {torch.cuda.max_memory_allocated(device)} bytes")
+    end_time = time.time()
+    elapsed = end_time - start_time
+
+    hours = int(elapsed // 3600)
+    minutes = int((elapsed % 3600) // 60)
+    seconds = elapsed % 60
+
+    print(f"Total training time: {hours:02d}:{minutes:02d}:{seconds:05.2f} (hh:mm:ss)")

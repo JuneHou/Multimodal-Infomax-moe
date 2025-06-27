@@ -146,7 +146,7 @@ def get_args():
     # Logistics
     parser.add_argument('--log_interval', type=int, default=100,
                         help='frequency of result logging (default: 100)')
-    parser.add_argument('--seed', type=int, default=1111,
+    parser.add_argument('--seed', type=int, default=24,
                         help='random seed')
     parser.add_argument('--device', type=int, default=0,
                         help='GPU device')
