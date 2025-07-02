@@ -127,26 +127,26 @@ def get_loader(hp, config, shuffle=True, mode=None):
 
         # SENT_LEN = min(sentences.size(0),50)
         SENT_LEN = 50
-        # Create bert indices using tokenizer
+        # Create DeBERTa indices using tokenizer
 
-        bert_details = []
+        deberta_details = []
         for sample in batch:
             text = " ".join(sample[0][3])
-            encoded_bert_sent = bert_tokenizer.encode_plus(
+            encoded_deberta_sent = deberta_tokenizer.encode_plus(
                 text, max_length=SENT_LEN, add_special_tokens=True, truncation=True, padding='max_length')
-            bert_details.append(encoded_bert_sent)
+            deberta_details.append(encoded_deberta_sent)
 
-        # Bert things are batch_first
-        bert_sentences = torch.LongTensor([sample["input_ids"] for sample in bert_details])
-        bert_sentence_types = torch.LongTensor([sample["token_type_ids"] for sample in bert_details])
-        bert_sentence_att_mask = torch.LongTensor([sample["attention_mask"] for sample in bert_details])
+        # DeBERTa things are batch_first
+        bert_sentences = torch.LongTensor([sample["input_ids"] for sample in deberta_details])
+        bert_sentence_types = torch.LongTensor([sample["token_type_ids"] for sample in deberta_details])
+        bert_sentence_att_mask = torch.LongTensor([sample["attention_mask"] for sample in deberta_details])
 
         # lengths are useful later in using RNNs
         lengths = torch.LongTensor([len(sample[0][0]) for sample in batch])
         if (vlens <= 0).sum() > 0:
             vlens[np.where(vlens == 0)] = 1
 
-        return sentences, visual, vlens, acoustic, alens, labels, lengths, bert_sentences, bert_sentence_types, bert_sentence_att_mask, ids, text_weights, visual_weights, acoustic_weights
+        return sentences, visual, vlens, acoustic, alens, labels, lengths, bert_sentences, bert_sentence_types, bert_sentence_att_mask, ids
     generator = torch.Generator(device=device)
     data_loader = DataLoader(
         dataset=dataset,

@@ -55,7 +55,7 @@ if __name__ == '__main__':
                     test_loader=test_loader, is_train=True)
     solver.train_and_eval()
 
-    print(f"New maximum memory allocated on GPU: {torch.cuda.max_memory_allocated(device)} bytes")
+    #print(f"New maximum memory allocated on GPU: {torch.cuda.max_memory_allocated(device)} bytes")
     end_time = time.time()
     elapsed = end_time - start_time
 

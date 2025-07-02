@@ -4,25 +4,25 @@ import time
 
 from torch import nn
 from torch.nn.utils.rnn import pad_sequence, pack_padded_sequence, pad_packed_sequence
-from transformers import BertModel, BertConfig
+from transformers import DebertaV2Model, DebertaV2Config
 
 def add_noise(x, intens=1e-7):
     return x + torch.rand(x.size()) * intens
 
 class LanguageEmbeddingLayer(nn.Module):
-    """Embed input text with "glove" or "Bert"
+    """Embed input text with "DeBERTa" or "Bert"
     """
     def __init__(self, hp):
         super(LanguageEmbeddingLayer, self).__init__()
-        bertconfig = BertConfig.from_pretrained('bert-base-uncased', output_hidden_states=True)
-        self.bertmodel = BertModel.from_pretrained('bert-base-uncased', config=bertconfig)
+        debertaconfig = DebertaV2Config.from_pretrained('microsoft/deberta-v3-base', output_hidden_states=True)
+        self.debertamodel = DebertaV2Model.from_pretrained('microsoft/deberta-v3-base', config=debertaconfig)
 
     def forward(self, sentences, bert_sent, bert_sent_type, bert_sent_mask):
-        bert_output = self.bertmodel(input_ids=bert_sent,
+        deberta_output = self.debertamodel(input_ids=bert_sent,
                                 attention_mask=bert_sent_mask,
                                 token_type_ids=bert_sent_type)
-        bert_output = bert_output[0]
-        return bert_output   # return head (sequence representation)
+        deberta_output = deberta_output[0]
+        return deberta_output   # return head (sequence representation)
 
 class SubNet(nn.Module):
     '''
