@@ -14,7 +14,9 @@ from utils.tools import load_pickle
 from create_dataset import MOSI, MOSEI, PAD, UNK
 from data_prepare import *
 
-bert_tokenizer = BertTokenizer.from_pretrained('bert-base-uncased', do_lower_case=True)
+from transformers import DebertaV2Tokenizer
+
+deberta_tokenizer = DebertaV2Tokenizer.from_pretrained('microsoft/deberta-v3-base')
 
 
 class MSADataset(Dataset):
@@ -146,7 +148,7 @@ def get_loader(hp, config, shuffle=True, mode=None):
         if (vlens <= 0).sum() > 0:
             vlens[np.where(vlens == 0)] = 1
 
-        return sentences, visual, vlens, acoustic, alens, labels, lengths, bert_sentences, bert_sentence_types, bert_sentence_att_mask, ids
+        return sentences, visual, vlens, acoustic, alens, labels, lengths, bert_sentences, bert_sentence_types, bert_sentence_att_mask, ids, text_weights, visual_weights, acoustic_weights
     generator = torch.Generator(device=device)
     data_loader = DataLoader(
         dataset=dataset,

@@ -108,7 +108,7 @@ class Solver(object):
             if os.path.exists(new_weights_path):
                 shutil.rmtree(new_weights_path)
                 print(f"Deleted previous weight folder: {new_weights_path}")
-            smooth_factor = 0.3
+            smooth_factor = 0.5
             decay_rate = 0.1
         
         model = self.model

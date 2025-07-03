@@ -151,7 +151,7 @@ def update_kl_weights(args, epoch, smooth_factor, datasets, new_weights_path):
 
         # **1. Merge Unimodal Results by `ids`**
         if args.kl_type == "residual":
-            uni_fold = f"/data/wang/junh/results/MMIM/unimodal_error/"
+            uni_fold = f"/data/wang/junh/results/MMIM/rebuttal/uni_deberta/"
         elif args.kl_type == "joint":
             uni_fold = f"/data/wang/junh/results/MMIM/unimodal_std/"
         else:
