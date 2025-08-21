@@ -71,7 +71,7 @@ python src/main.py --dataset mosi --modality text_audio_video --num_modality 3 -
 
 For experiments and replication of Fuse-MoE with the multimodal MIMIC-IV dataset, please see our companion repository:
 
-[https://github.com/JuneHou/Multimodal-Transformer.git](https://github.com/JuneHou/Multimodal-Transformer.git)
+[https://github.com/JuneHou/Multimodal-Transformer/tree/time](https://github.com/JuneHou/Multimodal-Transformer/tree/time)
 
 ## Citation
 Please cite our paper if you find our work useful for your research:
