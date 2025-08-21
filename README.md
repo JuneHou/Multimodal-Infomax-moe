@@ -6,9 +6,7 @@ This repository contains the official code for our paper:
 
 ## Paper
 
-> [BTW: A Non-Parametric Variance Stabilization Framework for Multimodal Model Integration](#)  
-> *Your Name*, et al.  
-> [arXiv/Journal link here]
+> [BTW: A Non-Parametric Variance Stabilization Framework for Multimodal Model Integration](https://openreview.net/forum?id=EXp1qDqhCk&referrer=%5BAuthor%20Console%5D(%2Fgroup%3Fid%3DEMNLP%2F2025%2FConference%2FAuthors%23your-submissions))  
 
 ## Overview
 
