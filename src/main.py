@@ -4,7 +4,7 @@ import numpy as np
 
 from utils import *
 from torch.utils.data import DataLoader
-from solver_ import Solver
+from solver import Solver
 from config import get_args, get_config, output_dim_dict, criterion_dict
 from data_loader import get_loader
 
