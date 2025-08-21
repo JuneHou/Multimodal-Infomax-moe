@@ -29,18 +29,7 @@ pip install -r requirements.txt
 ## Datasets
 The dataset downloading and preprocessing follows the [Multimodal-Infomax](https://github.com/declare-lab/Multimodal-Infomax)
 
-1. Download the CMU-MOSI and CMU-MOSEI dataset from [Google Drive](https://drive.google.com/drive/folders/1djN_EkrwoRLUt7Vq_QfNZgCl_24wBiIK?usp=sharing) or [Baidu Disk](https://pan.baidu.com/s/1Wxo4Bim9JhNmg8265p3ttQ) (extraction code: g3m2). Place them under the folder `Multimodal-Infomax/datasets`
-
-2. Set up the environment (need conda prerequisite)
-```
-conda env create -f environment.yml
-conda activate MMIM
-```
-
-3. Start training
-```
-python main.py --dataset mosi --contrast
-```
+Download the CMU-MOSI and CMU-MOSEI dataset from [Google Drive](https://drive.google.com/drive/folders/1djN_EkrwoRLUt7Vq_QfNZgCl_24wBiIK?usp=sharing) or [Baidu Disk](https://pan.baidu.com/s/1Wxo4Bim9JhNmg8265p3ttQ) (extraction code: g3m2). Place them under the folder `Multimodal-Infomax/datasets`
 
 ## Running Experiments
 
@@ -62,8 +51,10 @@ bash run_btw.sh
 
 ## Example Command
 
+For BTW, we use weights_type="kl+mi". For BTW-kl, please use weights_type="kl".
+
 ```bash
-python src/main.py --dataset mosi --modality text_audio_video --num_modality 3 --n_class 1 --moe_experts 16 --lr_main 1e-4 --out_folder "path/to/your/folder" --weights_type kl --kl_type residual --seed 1111
+python src/main_btw.py --dataset mosi --modality text_audio_video --num_modality 3 --n_class 1 --moe_experts 16 --lr_main 1e-4 --out_folder "path/to/your/folder" --weights_type kl+mi --seed 1111
 ```
 
 

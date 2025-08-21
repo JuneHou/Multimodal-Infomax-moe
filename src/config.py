@@ -140,7 +140,7 @@ def get_args():
     # Weights type
     parser.add_argument('--weights_type', type=str, default='kl',
                         help='weights')
-    parser.add_argument('--kl_type', type=str, default='joint',
+    parser.add_argument('--kl_type', type=str, default='residual',
                         help='kl weights')
 
     # Logistics
